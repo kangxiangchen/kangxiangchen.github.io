@@ -1,16 +1,101 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>My Portfolio</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CS180 Project 0</title>
+
+<!--
+  IMAGES: create an "images/" folder next to this file and add:
+    images/part1_selfie_closeup.jpg     (wrong way, close up)
+    images/part1_selfie_faraway.jpg     (right way, stepped back + zoomed)
+    images/part2_building_zoomed.jpg    (far + zoomed, flattened)
+    images/part2_building_close.jpg     (walked up + wide, deep)
+    images/part3_dollyzoom.gif          (your dolly zoom GIF)
+  Then edit the captions/writeups to match your shots. Delete this comment when done.
+-->
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 720px;
+    margin: 40px auto;
+    padding: 0 20px;
+    line-height: 1.6;
+    color: #111;
+  }
+  h1 { font-size: 1.6em; margin-bottom: 0; }
+  .sub { color: #666; margin-top: 4px; }
+  h2 { font-size: 1.2em; margin-top: 48px; }
+  img { width: 100%; height: auto; display: block; margin: 4px 0; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .row figure { flex: 1; min-width: 240px; margin: 0; }
+  figcaption { font-size: 0.85em; color: #666; }
+  a { color: #06c; }
+  @media (max-width: 520px) { .row figure { min-width: 100%; } }
+</style>
 </head>
 <body>
-    <h1>Welcome to My CS180 Portfolio!</h1>
-    <a href="./1/index.html">Project 1</a>
+
+  <h1>Project 0: Becoming Friends with Your Camera</h1>
+  <p class="sub">CS180 &middot; Kangxiang Chen &middot; <a href="../index.html">back to portfolio</a></p>
+
+  <p>The thread running through all three parts: perspective is set by where the camera is,
+  not by the lens. Focal length only changes how much of the scene gets cropped.</p>
+
+  <h2>Part 1 &mdash; The Selfie: Wrong Way vs. Right Way</h2>
+  <p>Same portrait twice: once up close (a normal selfie distance), once stepped back several
+  feet and zoomed in so the face fills the frame the same amount.</p>
+  <div class="row">
+    <figure>
+      <img src="images/part1_selfie_closeup.jpg" alt="close-up selfie">
+      <figcaption>Wrong way &mdash; up close (~30 cm)</figcaption>
+    </figure>
+    <figure>
+      <img src="images/part1_selfie_faraway.jpg" alt="stepped-back selfie">
+      <figcaption>Right way &mdash; stepped back &amp; zoomed (~200 cm)</figcaption>
+    </figure>
+  </div>
+  <p><b>Why:</b> the close-up distortion isn't from the focal length, it's from how close the
+  camera is. At ~30 cm, my nose (say 25 cm) is much closer than my ears (say 35 cm) &mdash; a 1.4&times;
+  difference &mdash; so the nose is magnified relative to the ears, giving the bulbous look. Stepping
+  back to ~2 m makes the nose (195 cm) and ears (205 cm) nearly equidistant, so features render at
+  the same scale and the face looks natural. Zooming just re-crops the far shot; it doesn't fix or
+  cause the distortion. This is why portraits are shot from a distance at ~85mm.</p>
+
+  <h2>Part 2 &mdash; Architectural Perspective Compression</h2>
+  <p>Same idea reversed, on a building: far away and zoomed in, then walked up close and wide, so
+  the building is roughly the same size in both.</p>
+  <div class="row">
+    <figure>
+      <img src="images/part2_building_zoomed.jpg" alt="building far and zoomed">
+      <figcaption>Far + zoomed &mdash; flattened</figcaption>
+    </figure>
+    <figure>
+      <img src="images/part2_building_close.jpg" alt="building close and wide">
+      <figcaption>Walked up + wide &mdash; deep</figcaption>
+    </figure>
+  </div>
+  <p><b>Why:</b> the same distance-ratio effect. From ~100 m back, the near and far parts of the
+  scene (say 100 m and 130 m) are nearly the same distance, so they render at nearly the same scale
+  and the scene collapses into flat stacked layers. Walking up close, the near facade (~5 m) and
+  background (~35 m) differ by 7&times;, so foreshortening is strong and the scene reads as deep.
+  Again, moving the camera changed the perspective; the wide lens just let the whole facade fit
+  from close up.</p>
+
+  <h2>Part 3 &mdash; The Dolly Zoom</h2>
+  <p>The "Vertigo shot": a series of stills taken while moving the camera back and zooming in at
+  the same time, keeping the subject the same size, combined into a GIF.</p>
+  <figure>
+    <img src="images/part3_dollyzoom.gif" alt="dolly zoom">
+    <figcaption>Camera moving back while zooming in, subject size held constant.</figcaption>
+  </figure>
+  <p><b>Why:</b> the effect decouples subject size from perspective. Zoom controls the crop; camera
+  position controls perspective. Dollying back while zooming in holds the subject at a constant size
+  (the zoom cancels the added distance), but the camera's real distance to the scene keeps changing,
+  so the background's depth relationships shift underneath: it flattens and swells toward the
+  subject even though the subject never changes size. A fixed subject against a morphing background
+  reads as impossible, vertiginous motion.</p>
+
 </body>
 </html>
