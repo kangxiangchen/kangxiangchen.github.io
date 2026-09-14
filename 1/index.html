@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Colorizing the Prokudin-Gorskii plates - CS180 Project 1</title>
+<meta name="description" content="CS180 Project 1: aligning and colour correcting the Prokudin-Gorskii glass plate negatives.">
+<style>
+:root {
+  --ink: #1f2328;
+  --muted: #5b6570;
+  --hair: #d4d8dc;
+  --blue: #2f5da8;
+  --green: #2c7a4b;
+  --red: #a8382c;
+  --serif: "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
+  --sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--serif);
+  color: var(--ink);
+  line-height: 1.62;
+  font-size: 17px;
+  margin: 0;
+  padding: 0 1.25rem 5rem;
+}
+.col { max-width: 41rem; margin: 0 auto; }
+.wide { width: min(60rem, calc(100vw - 2.5rem)); margin-left: 50%;
+         transform: translateX(-50%); margin-top: 2.4rem; margin-bottom: 2.4rem; }
+p { margin: 0 0 1.05rem; }
+a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+h1 { font-size: 2.15rem; line-height: 1.18; font-weight: 600; margin: 0 0 .6rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.42rem; font-weight: 600; margin: .5rem 0 .9rem; letter-spacing: -0.005em; }
+h3 { font-family: var(--sans); font-size: .95rem; font-weight: 600; margin: 1.9rem 0 .5rem; }
+
+/* The three-band mark: blue over green over red, the order the exposures sit
+   on the plate. It opens every section, so the page is signposted by the
+   subject itself rather than by decoration. */
+.mark { width: 3.1rem; margin: 3.4rem 0 1.1rem; }
+.mark span { display: block; height: 0; border-top: 3px solid; margin-bottom: 2px; }
+.mark .b { border-color: var(--blue); }
+.mark .g { border-color: var(--green); }
+.mark .r { border-color: var(--red); width: 62%; }
+.col > .mark:first-of-type { margin-top: 2.2rem; }
+
+.byline { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin: 0 0 2rem; }
+.byline span { display: block; }
+.lede { font-size: 1.1rem; }
+
+figure { margin: 2.2rem 0; }
+figcaption { font-family: var(--sans); font-size: .8rem; line-height: 1.5; color: var(--muted); margin-top: .6rem; }
+img { display: block; width: 100%; height: auto; border: 1px solid var(--hair); }
+
+.row { display: grid; gap: .8rem; grid-template-columns: repeat(3, 1fr); }
+.pair { display: grid; gap: .9rem; grid-template-columns: 1fr 1fr; }
+.gallery { display: grid; gap: 1.3rem; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.gallery figcaption { margin-top: .45rem; }
+
+/* Each strip is keyed to its filter by a coloured edge, not by a text label. */
+.strip { border-left: 5px solid var(--hair); padding-left: .55rem; }
+.strip.b { border-left-color: var(--blue); }
+.strip.g { border-left-color: var(--green); }
+.strip.r { border-left-color: var(--red); }
+
+table { border-collapse: collapse; width: 100%; font-family: var(--sans);
+        font-size: .82rem; font-variant-numeric: tabular-nums; margin: 1.2rem 0 1.6rem; }
+caption { caption-side: bottom; text-align: left; font-family: var(--sans);
+          font-size: .78rem; color: var(--muted); padding-top: .55rem; }
+th, td { text-align: left; padding: .38rem .7rem .38rem 0; border-bottom: 1px solid var(--hair); }
+thead th { border-bottom: 1.5px solid var(--ink); font-weight: 600; }
+td.num, th.num { text-align: right; padding-right: 1.1rem; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+.flag { color: var(--red); }
+
+code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+ul { margin: 0 0 1.05rem; padding-left: 1.15rem; }
+li { margin-bottom: .4rem; }
+.note { font-family: var(--sans); font-size: .85rem; color: var(--muted);
+        border-left: 2px solid var(--hair); padding-left: .9rem; margin: 1.5rem 0; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .row, .pair { grid-template-columns: 1fr; }
+  h1 { font-size: 1.7rem; }
+}
+@media print {
+  body { font-size: 10.5pt; padding: 0; }
+  .col { max-width: none; }
+  .wide { width: 100%; margin-left: 0; transform: none; }
+  a { color: var(--ink); }
+  figure, table { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+  .mark { margin-top: 1.6rem; }
+  /* Print engines do not all resolve repeat(auto-fill, minmax(...)), and a
+     grid that collapses to one column turns the gallery into one photograph
+     per sheet. Fixed track counts keep the printed page as dense as the
+     screen page. */
+  .gallery { grid-template-columns: 1fr 1fr; gap: .9rem; }
+  .gallery figure { margin: 0; }
+  .gallery img { max-height: 82mm; object-fit: contain; }
+  .row img { max-height: 62mm; object-fit: contain; }
+  .pair img { max-height: 90mm; object-fit: contain; }
+  figure { margin: 1.2rem 0; }
+  figure > img { max-height: 150mm; object-fit: contain; }
+}
+</style>
+</head>
+<body>
+
+<div class="col">
+<h1>Colorizing the Prokudin-Gorskii plates</h1>
+<p class="byline"><span>Chen Kangxiang</span><span>CS180, Project 1</span>
+<span>2026-09-13</span></p>
+
+<p class="lede">Around 1907 Sergei Prokudin-Gorskii photographed the Russian Empire in colour
+before colour film existed, by shooting each scene three times in quick succession through a
+blue, a green and a red filter. The negatives survived. Recombining them into a colour
+photograph is the whole problem: the three exposures were taken seconds apart through a
+sliding plate holder, so they do not line up, and stacking them as they are gives a picture
+smeared into coloured ghosts.</p>
+
+<p>This page walks through how I found the right shift for each exposure. The short version
+is that it is a search: try a displacement, score how well the shifted channel matches the
+reference, keep the best one. Everything after that is making the score trustworthy and
+making the search cheap enough to run on a 3800 by
+3270 pixel scan.</p>
+
+<div class="wide">
+<figure>
+  <div class="row"><div class="strip b"><img src="images/cathedral_strip_b.jpg" alt="b exposure"></div><div class="strip g"><img src="images/cathedral_strip_g.jpg" alt="g exposure"></div><div class="strip r"><img src="images/cathedral_strip_r.jpg" alt="r exposure"></div></div>
+  <figcaption>The <em>cathedral</em> plate as it arrives: one scene photographed three times
+  through a blue, a green and a red filter, stored as three grayscale strips stacked top to
+  bottom. Read the coloured edge on the left of each strip as its filter.</figcaption>
+</figure>
+<figure class="pair">
+  <div><img src="images/cathedral_unaligned.jpg" alt="channels stacked without alignment">
+    <figcaption>Stacked with no alignment at all.</figcaption></div>
+  <div><img src="images/cathedral_final.jpg" alt="final colour image">
+    <figcaption>After alignment, border removal and colour correction.</figcaption></div>
+</figure>
+</div>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>Scoring a guess</h2>
+
+<p>Take the blue exposure as fixed and slide the green one over it. For each candidate shift I
+need a single number saying how well the two grayscale images agree. I used the two the
+assignment asks for.</p>
+
+<p><strong>The Euclidean distance, also called the L2 norm</strong>, treats each image as a long
+list of pixel values and measures the straight-line distance between the two lists. Written
+out, it is the square root of the summed squared differences, and smaller means a better
+match. It is the obvious choice and it has an obvious weakness: it compares absolute
+brightness. If the red exposure happens to be brighter overall than the blue one, every
+pixel differs by a roughly constant amount, and L2 reports a bad match no matter how
+perfectly the two are lined up.</p>
+
+<p><strong>Normalised cross-correlation, or NCC</strong>, fixes that by asking a different
+question. Instead of "are these pixels the same value", it asks "do these pixels vary
+together". Both images get their mean subtracted, which throws away any constant brightness
+offset, and are then scaled to unit length, which throws away any constant gain. What is left
+is the dot product of two unit vectors, a number between minus one and one where one means
+the two patterns rise and fall in lockstep. Formally, with <code>a</code> and <code>b</code>
+the two patches flattened into vectors,</p>
+
+<p style="text-align:center"><code>NCC(a, b) = (a - mean a)&middot;(b - mean b) / (&#8214;a - mean a&#8214; &#8214;b - mean b&#8214;)</code></p>
+
+<p>Both metrics are computed on an interior window, not on the whole frame. That detail
+matters more than it sounds. The scans have black and white borders that belong to the plate,
+not to the photograph, and those borders are high contrast and identical across the three
+strips. Score the full frame and the search happily lines up the <em>frames</em> rather than
+the picture inside them. I cut 15 percent off each side of the
+reference and score only what is left.</p>
+
+<p>There is a second reason to use a fixed window. The reference window is cut once and every
+candidate takes a window of the same size from the moving channel, offset by the displacement
+being tested. If instead I scored whatever region the two images happened to overlap in, small
+shifts would be scored over more pixels than large ones, and L2, which sums rather than
+averages, would prefer small shifts for no reason other than arithmetic. Fixed window, fair
+comparison. It also means no wrapped-around content ever enters a score.</p>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>The naive version, and why it runs out of road</h2>
+
+<p>The first implementation searches every integer displacement in a
+&plusmn;15 pixel window, scores all
+961 of them, and keeps the winner. On the small JPEGs
+this is instant and it works.</p>
+
+<table>
+<caption>Single-scale exhaustive search over a &plusmn;15 pixel window, run on the low
+resolution JPEGs. Displacements are (x, y) in pixels, relative to the blue exposure.
+Time covers both channels of that image.</caption>
+<thead><tr><th>image</th><th class="num">channel size</th>
+<th class="num">L2 green</th><th class="num">L2 red</th>
+<th class="num">NCC green</th><th class="num">NCC red</th>
+<th class="num">agree</th><th class="num">sec</th></tr></thead>
+<tbody><tr><td>cathedral</td><td class='num'>390 &times; 341</td><td class='num'>(+2, +5)</td><td class='num'>(+3, +12)</td><td class='num'>(+2, +5)</td><td class='num'>(+3, +12)</td><td class='num'>yes</td><td class='num'>0.26</td></tr><tr><td>monastery</td><td class='num'>391 &times; 341</td><td class='num'>(+2, -3)</td><td class='num'>(+2, +3)</td><td class='num'>(+2, -3)</td><td class='num'>(+2, +3)</td><td class='num'>yes</td><td class='num'>0.29</td></tr><tr><td>tobolsk</td><td class='num'>396 &times; 341</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>yes</td><td class='num'>0.32</td></tr></tbody></table>
+
+<div class="wide"><div class="gallery"><figure style="margin:0"><img src="images/cathedral_base.jpg" alt="cathedral"><figcaption>cathedral<br>green (+2, +5), red (+3, +12)</figcaption></figure><figure style="margin:0"><img src="images/monastery_base.jpg" alt="monastery"><figcaption>monastery<br>green (+2, -3), red (+2, +3)</figcaption></figure><figure style="margin:0"><img src="images/tobolsk_base.jpg" alt="tobolsk"><figcaption>tobolsk<br>green (+3, +3), red (+3, +6)</figcaption></figure></div></div>
+
+<p>L2 and NCC agree on these images. That is not surprising: they are small, the exposures are
+reasonably similar in brightness, and the true shift is only a few pixels. The metrics separate
+later, on the plates where the channels disagree about how bright the world is.</p>
+
+<p>The problem is scale. The full resolution scans are around
+3800 by 3270 pixels per channel and the true
+displacements run to over a hundred pixels, so a brute force search would need a window of
+several hundred pixels in each direction. The cost of exhaustive search grows as the search
+radius squared times the number of pixels scored, and both factors are large at once. A
+&plusmn;150 window on a full scan is around ninety thousand candidate displacements, each
+scored over millions of pixels. That is hours per image, not the one minute the assignment
+asks for.</p>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>Coarse to fine with an image pyramid</h2>
+
+<p>The way out is to notice that a large shift at full resolution is a small shift in a small
+picture. Halve the image and the displacement halves with it. Halve it enough times and a
+hundred and twenty pixel offset becomes a four pixel offset, which the naive search can find
+in one pass.</p>
+
+<p>So I build an image pyramid: a stack of copies of the image, each half the size of the one
+below. Going down a level is two steps. First low-pass filter, then keep every other pixel.
+The filter is the separable five tap binomial kernel <code>[1 4 6 4 1] / 16</code>, which is a
+cheap approximation to a Gaussian and is applied once along the rows and once along the
+columns. Skipping the blur and simply throwing away every other pixel would be a mistake:
+the fine grain, scratches and dust in the scan are higher frequency than the reduced sampling
+rate can represent, so they would alias into the coarse image as false structure and send the
+coarse search somewhere wrong. The blur removes that detail before it can fold back in.</p>
+
+<p>The search itself is then the single-scale routine called recursively:</p>
+
+<ul>
+<li>If the image is smaller than 128 pixels on its short side, run the
+exhaustive &plusmn;15 search and return the answer.</li>
+<li>Otherwise halve both images, solve the same problem there, and double the answer that
+comes back, since one pixel at half resolution is two pixels here.</li>
+<li>Take that doubled estimate as a starting guess and search only
+&plusmn;2 pixels around it, which is enough to fix the rounding error
+the doubling introduced.</li>
+</ul>
+
+<p>The saving is the whole point. Only the coarsest level pays for a wide search, and it pays
+on an image 128 pixels on its short side. Every level above it evaluates just
+25 candidates. Across this collection the pyramid scored
+a few thousand displacements per image instead of the tens of thousands brute force would
+have needed, and the reachable range is still large: 15 pixels at the
+coarsest level, doubled once per level, covers hundreds of pixels at full resolution.</p>
+
+<p>One parameter needed care. I first let the pyramid recurse down to 64 pixels, and the
+coarse search started failing: after cropping the scoring margin there was only a patch of
+roughly 16 by 11 pixels left to match on, which is not enough evidence to pick a
+displacement, and any mistake made there gets multiplied by 64 on the way back up. Stopping
+at 128 pixels leaves a large enough patch to be decisive. This is a single
+fixed setting used for every image, not something tuned per plate.</p>
+
+<table>
+<caption>Pyramid alignment with normalised cross-correlation on raw pixel values.
+Displacements are (x, y) in pixels. "Levels" is the depth of the pyramid for that image and
+"scored" counts how many candidate displacements were evaluated in total for both channels.</caption>
+<thead><tr><th>image</th><th class="num">channel size</th>
+<th class="num">green</th><th class="num">red</th>
+<th class="num">levels</th><th class="num">scored</th><th class="num">sec</th></tr></thead>
+<tbody><tr><td>belaia_river <span style='color:var(--muted)'>(mine)</span></td><td class='num'>3697 &times; 3216</td><td class='num'>(+13, +56)</td><td class='num'>(+24, +107)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.08</td></tr><tr><td>cathedral</td><td class='num'>390 &times; 341</td><td class='num'>(+2, +5)</td><td class='num'>(+3, +12)</td><td class='num'>3</td><td class='num'>2022</td><td class='num'>0.04</td></tr><tr><td>church</td><td class='num'>3634 &times; 3202</td><td class='num'>(+4, +25)</td><td class='num'>(-4, +58)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.01</td></tr><tr><td>emir</td><td class='num'>3702 &times; 3209</td><td class='num'>(+24, +49)</td><td class='num'>(-482, +401)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.00</td></tr><tr><td>etruscan_vases <span style='color:var(--muted)'>(mine)</span></td><td class='num'>3769 &times; 3254</td><td class='num'>(+5, +25)</td><td class='num'>(+7, +111)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.20</td></tr><tr><td>harvesters</td><td class='num'>3683 &times; 3218</td><td class='num'>(+17, +60)</td><td class='num'>(+14, +124)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.05</td></tr><tr><td>icon</td><td class='num'>3741 &times; 3244</td><td class='num'>(+17, +41)</td><td class='num'>(+23, +89)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.10</td></tr><tr><td>ilemselga</td><td class='num'>3800 &times; 3270</td><td class='num'>(+7, +40)</td><td class='num'>(+11, +130)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.04</td></tr><tr><td>melons</td><td class='num'>3770 &times; 3241</td><td class='num'>(+10, +81)</td><td class='num'>(+14, +178)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.01</td></tr><tr><td>milan_cathedral <span style='color:var(--muted)'>(mine)</span></td><td class='num'>3790 &times; 3261</td><td class='num'>(-17, +52)</td><td class='num'>(-35, +120)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.02</td></tr><tr><td>monastery</td><td class='num'>391 &times; 341</td><td class='num'>(+2, -3)</td><td class='num'>(+2, +3)</td><td class='num'>3</td><td class='num'>2022</td><td class='num'>0.04</td></tr><tr><td>religous_painting</td><td class='num'>3742 &times; 3193</td><td class='num'>(+3, +28)</td><td class='num'>(+7, +68)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.04</td></tr><tr><td>self_portrait</td><td class='num'>3810 &times; 3251</td><td class='num'>(+29, +79)</td><td class='num'>(+37, +176)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.17</td></tr><tr><td>siren</td><td class='num'>3817 &times; 3250</td><td class='num'>(-6, +49)</td><td class='num'>(-25, +96)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.37</td></tr><tr><td>three_generations</td><td class='num'>3714 &times; 3209</td><td class='num'>(+14, +52)</td><td class='num'>(+11, +111)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.06</td></tr><tr><td>tobolsk</td><td class='num'>396 &times; 341</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>3</td><td class='num'>2022</td><td class='num'>0.04</td></tr><tr><td>wharf</td><td class='num'>3761 &times; 3244</td><td class='num'>(-7, +15)</td><td class='num'>(-16, +82)</td><td class='num'>6</td><td class='num'>2172</td><td class='num'>1.15</td></tr></tbody></table>
+
+<p>Total runtime was 79 seconds for 17 plates, an average of
+4.6 seconds each, with the slowest alignment being siren at
+1.4 seconds for both channels. The per-pixel work is fully vectorised in NumPy;
+the only Python loops left are over candidate displacements and over the five taps of the
+blur kernel.</p>
+
+<h3>The same search scored with L2</h3>
+
+<p>Everything above uses normalised cross-correlation. Running the identical pyramid with the
+Euclidean distance instead changes the answer on several plates.</p>
+
+<table>
+<caption>The same pyramid search scored two ways, on raw pixels in both cases.
+Displacements are (x, y) relative to the blue exposure.</caption>
+<thead><tr><th>image</th><th class="num">NCC green</th><th class="num">NCC red</th>
+<th class="num">L2 green</th><th class="num">L2 red</th><th class="num">verdict</th></tr></thead>
+<tbody><tr><td>belaia_river</td><td class='num'>(+13, +56)</td><td class='num'>(+24, +107)</td><td class='num'>(+13, +56)</td><td class='num'>(+21, +511)</td><td class='num'><span class='flag'>L2 off by 404 px</span></td></tr><tr><td>cathedral</td><td class='num'>(+2, +5)</td><td class='num'>(+3, +12)</td><td class='num'>(+2, +5)</td><td class='num'>(+47, +8)</td><td class='num'><span class='flag'>L2 off by 44 px</span></td></tr><tr><td>church</td><td class='num'>(+4, +25)</td><td class='num'>(-4, +58)</td><td class='num'>(+457, +49)</td><td class='num'>(+447, +79)</td><td class='num'><span class='flag'>L2 off by 453 px</span></td></tr><tr><td>emir</td><td class='num'>(+24, +49)</td><td class='num'>(-482, +401)</td><td class='num'>(+24, +49)</td><td class='num'>(+44, +66)</td><td class='num'><span class='flag'>L2 off by 526 px</span></td></tr><tr><td>etruscan_vases</td><td class='num'>(+5, +25)</td><td class='num'>(+7, +111)</td><td class='num'>(+5, +25)</td><td class='num'>(+7, +111)</td><td class='num'>agree</td></tr><tr><td>harvesters</td><td class='num'>(+17, +60)</td><td class='num'>(+14, +124)</td><td class='num'>(+17, +59)</td><td class='num'>(+13, +124)</td><td class='num'>within 1 px</td></tr><tr><td>icon</td><td class='num'>(+17, +41)</td><td class='num'>(+23, +89)</td><td class='num'>(+17, +41)</td><td class='num'>(+23, +89)</td><td class='num'>agree</td></tr><tr><td>ilemselga</td><td class='num'>(+7, +40)</td><td class='num'>(+11, +130)</td><td class='num'>(+7, +40)</td><td class='num'>(+11, +130)</td><td class='num'>agree</td></tr><tr><td>melons</td><td class='num'>(+10, +81)</td><td class='num'>(+14, +178)</td><td class='num'>(+10, +81)</td><td class='num'>(+14, +178)</td><td class='num'>agree</td></tr><tr><td>milan_cathedral</td><td class='num'>(-17, +52)</td><td class='num'>(-35, +120)</td><td class='num'>(-17, +52)</td><td class='num'>(-393, +229)</td><td class='num'><span class='flag'>L2 off by 358 px</span></td></tr><tr><td>monastery</td><td class='num'>(+2, -3)</td><td class='num'>(+2, +3)</td><td class='num'>(+2, -3)</td><td class='num'>(+41, +4)</td><td class='num'><span class='flag'>L2 off by 39 px</span></td></tr><tr><td>religous_painting</td><td class='num'>(+3, +28)</td><td class='num'>(+7, +68)</td><td class='num'>(+3, +28)</td><td class='num'>(+7, +69)</td><td class='num'>within 1 px</td></tr><tr><td>self_portrait</td><td class='num'>(+29, +79)</td><td class='num'>(+37, +176)</td><td class='num'>(+29, +78)</td><td class='num'>(+37, +176)</td><td class='num'>within 1 px</td></tr><tr><td>siren</td><td class='num'>(-6, +49)</td><td class='num'>(-25, +96)</td><td class='num'>(-6, +50)</td><td class='num'>(-25, +96)</td><td class='num'>within 1 px</td></tr><tr><td>three_generations</td><td class='num'>(+14, +52)</td><td class='num'>(+11, +111)</td><td class='num'>(+14, +52)</td><td class='num'>(+11, +111)</td><td class='num'>agree</td></tr><tr><td>tobolsk</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>agree</td></tr><tr><td>wharf</td><td class='num'>(-7, +15)</td><td class='num'>(-16, +82)</td><td class='num'>(-7, +15)</td><td class='num'>(-16, +82)</td><td class='num'>agree</td></tr></tbody></table>
+
+<p>L2 breaks on 6 of 17 plates inside the pyramid: belaia_river, cathedral, church, emir, milan_cathedral, monastery. The worst is emir, where it lands 526 pixels from the NCC answer, which is most of a frame away. The cause is the thing NCC subtracts out and L2 does not. Summed squared difference compares absolute intensities, so if the red exposure is uniformly brighter than the blue one, every candidate displacement carries that constant penalty and the score is dominated by a brightness gap rather than by structure. Blurring makes it worse, not better: at the coarsest level fine detail is gone and what is left to compare is mostly overall tone, so the search happily settles on a displacement that matches a dark band to a dark band. The pyramid then multiplies that early mistake by two at every level on the way back up.</p>
+
+<p>This is why the colour images on this page come from NCC and not from L2, and it is also why the single-scale table above is misleading on its own: on three small JPEGs with a few pixels of shift, the two metrics look interchangeable.</p>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>All of the plates</h2>
+
+<div class="wide"><div class="gallery"><figure style="margin:0"><img src="images/belaia_river_final.jpg" alt="belaia_river"><figcaption>belaia_river<br>green (+13, +56), red (+24, +106)</figcaption></figure><figure style="margin:0"><img src="images/cathedral_final.jpg" alt="cathedral"><figcaption>cathedral<br>green (+2, +5), red (+3, +12)</figcaption></figure><figure style="margin:0"><img src="images/church_final.jpg" alt="church"><figcaption>church<br>green (+4, +25), red (-4, +58)</figcaption></figure><figure style="margin:0"><img src="images/emir_final.jpg" alt="emir"><figcaption>emir<br>green (+24, +49), red (+40, +107)</figcaption></figure><figure style="margin:0"><img src="images/etruscan_vases_final.jpg" alt="etruscan_vases"><figcaption>etruscan_vases<br>green (+5, +25), red (+9, +110)</figcaption></figure><figure style="margin:0"><img src="images/harvesters_final.jpg" alt="harvesters"><figcaption>harvesters<br>green (+17, +60), red (+14, +124)</figcaption></figure><figure style="margin:0"><img src="images/icon_final.jpg" alt="icon"><figcaption>icon<br>green (+17, +42), red (+23, +90)</figcaption></figure><figure style="margin:0"><img src="images/ilemselga_final.jpg" alt="ilemselga"><figcaption>ilemselga<br>green (+7, +40), red (+11, +131)</figcaption></figure><figure style="margin:0"><img src="images/melons_final.jpg" alt="melons"><figcaption>melons<br>green (+10, +80), red (+13, +177)</figcaption></figure><figure style="margin:0"><img src="images/milan_cathedral_final.jpg" alt="milan_cathedral"><figcaption>milan_cathedral<br>green (-17, +52), red (-35, +120)</figcaption></figure><figure style="margin:0"><img src="images/monastery_final.jpg" alt="monastery"><figcaption>monastery<br>green (+2, -3), red (+2, +3)</figcaption></figure><figure style="margin:0"><img src="images/religous_painting_final.jpg" alt="religous_painting"><figcaption>religous_painting<br>green (+1, +30), red (+6, +70)</figcaption></figure><figure style="margin:0"><img src="images/self_portrait_final.jpg" alt="self_portrait"><figcaption>self_portrait<br>green (+29, +78), red (+37, +176)</figcaption></figure><figure style="margin:0"><img src="images/siren_final.jpg" alt="siren"><figcaption>siren<br>green (-6, +49), red (-24, +96)</figcaption></figure><figure style="margin:0"><img src="images/three_generations_final.jpg" alt="three_generations"><figcaption>three_generations<br>green (+12, +53), red (+9, +111)</figcaption></figure><figure style="margin:0"><img src="images/tobolsk_final.jpg" alt="tobolsk"><figcaption>tobolsk<br>green (+3, +3), red (+3, +6)</figcaption></figure><figure style="margin:0"><img src="images/wharf_final.jpg" alt="wharf"><figcaption>wharf<br>green (-6, +15), red (-16, +82)</figcaption></figure></div></div>
+
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>Three plates I picked myself</h2>
+<p>These came from the Library of Congress scans of the collection rather than from the course
+data, and went through the same pipeline with the same parameters.</p>
+<div class="wide"><div class="gallery"><figure style="margin:0"><img src="images/belaia_river_final.jpg" alt="belaia_river"><figcaption>belaia_river<br>green (+13, +56), red (+24, +106)</figcaption></figure><figure style="margin:0"><img src="images/etruscan_vases_final.jpg" alt="etruscan_vases"><figcaption>etruscan_vases<br>green (+5, +25), red (+9, +110)</figcaption></figure><figure style="margin:0"><img src="images/milan_cathedral_final.jpg" alt="milan_cathedral"><figcaption>milan_cathedral<br>green (-17, +52), red (-35, +120)</figcaption></figure></div></div>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>When raw brightness lies</h2>
+
+<p>Matching raw pixel values assumes that a bright patch in the blue exposure is a bright patch
+in the red one. Usually true, and on the Emir of Bukhara plate, badly false. His robe is a
+saturated blue: it reflects strongly in the blue exposure and barely at all in the red one, so
+over a large part of the frame the two channels are not just differently scaled, they run in
+opposite directions. NCC removes a constant offset and a constant gain, but nothing about it
+survives a region where the relationship inverts.</p>
+
+<p>What does survive is where things are, as opposed to how bright they are. The edge of a
+sleeve is an edge in all three exposures regardless of which one renders the fabric lighter.
+So the second feature I match on is the Sobel gradient magnitude: I filter for the horizontal
+and vertical derivative, take the magnitude of the resulting gradient vector at each pixel, and
+run exactly the same NCC search on that instead of on intensities. Edges are computed
+separately at every pyramid level rather than once at full resolution and then shrunk, because
+downsampling a gradient map smears a thin edge into a blur that no longer marks a position.</p>
+
+
+<figure class="wide pair">
+  <div><img src="images/emir_base.jpg" alt="emir aligned on raw intensities">
+    <figcaption>Raw intensities: green (+24, +49), red (-482, +401). The search has thrown
+    the red exposure most of a frame away, and what is left is the blue and green channels over
+    a red ghost of somewhere else entirely.</figcaption></div>
+  <div><img src="images/emir_grad.jpg" alt="emir aligned on gradients">
+    <figcaption>Sobel gradient magnitude, same pyramid and same NCC: green (+24, +49),
+    red (+40, +107). Neither image is cropped or colour corrected, so the only thing that
+    changed is what the metric was scoring.</figcaption></div>
+</figure>
+
+<table>
+<caption>Raw intensity matching against Sobel gradient matching, both with NCC and the
+same pyramid settings. A gap of a pixel or two is the refinement step settling on a
+neighbouring displacement; only a flagged row is a plate where the choice of feature
+changes where the channel actually lands.</caption>
+<thead><tr><th>image</th><th class="num">raw green</th><th class="num">raw red</th>
+<th class="num">gradient green</th><th class="num">gradient red</th>
+<th class="num">verdict</th></tr></thead>
+<tbody><tr><td>belaia_river</td><td class='num'>(+13, +56)</td><td class='num'>(+24, +107)</td><td class='num'>(+13, +56)</td><td class='num'>(+24, +106)</td><td class='num'>within 1 px</td></tr><tr><td>cathedral</td><td class='num'>(+2, +5)</td><td class='num'>(+3, +12)</td><td class='num'>(+2, +5)</td><td class='num'>(+3, +12)</td><td class='num'>identical</td></tr><tr><td>church</td><td class='num'>(+4, +25)</td><td class='num'>(-4, +58)</td><td class='num'>(+4, +25)</td><td class='num'>(-4, +58)</td><td class='num'>identical</td></tr><tr><td>emir</td><td class='num'>(+24, +49)</td><td class='num'>(-482, +401)</td><td class='num'>(+24, +49)</td><td class='num'>(+40, +107)</td><td class='num'><span class='flag'>differs by 522 px</span></td></tr><tr><td>etruscan_vases</td><td class='num'>(+5, +25)</td><td class='num'>(+7, +111)</td><td class='num'>(+5, +25)</td><td class='num'>(+9, +110)</td><td class='num'>within 2 px</td></tr><tr><td>harvesters</td><td class='num'>(+17, +60)</td><td class='num'>(+14, +124)</td><td class='num'>(+17, +60)</td><td class='num'>(+14, +124)</td><td class='num'>identical</td></tr><tr><td>icon</td><td class='num'>(+17, +41)</td><td class='num'>(+23, +89)</td><td class='num'>(+17, +42)</td><td class='num'>(+23, +90)</td><td class='num'>within 1 px</td></tr><tr><td>ilemselga</td><td class='num'>(+7, +40)</td><td class='num'>(+11, +130)</td><td class='num'>(+7, +40)</td><td class='num'>(+11, +131)</td><td class='num'>within 1 px</td></tr><tr><td>melons</td><td class='num'>(+10, +81)</td><td class='num'>(+14, +178)</td><td class='num'>(+10, +80)</td><td class='num'>(+13, +177)</td><td class='num'>within 1 px</td></tr><tr><td>milan_cathedral</td><td class='num'>(-17, +52)</td><td class='num'>(-35, +120)</td><td class='num'>(-17, +52)</td><td class='num'>(-35, +120)</td><td class='num'>identical</td></tr><tr><td>monastery</td><td class='num'>(+2, -3)</td><td class='num'>(+2, +3)</td><td class='num'>(+2, -3)</td><td class='num'>(+2, +3)</td><td class='num'>identical</td></tr><tr><td>religous_painting</td><td class='num'>(+3, +28)</td><td class='num'>(+7, +68)</td><td class='num'>(+1, +30)</td><td class='num'>(+6, +70)</td><td class='num'>within 2 px</td></tr><tr><td>self_portrait</td><td class='num'>(+29, +79)</td><td class='num'>(+37, +176)</td><td class='num'>(+29, +78)</td><td class='num'>(+37, +176)</td><td class='num'>within 1 px</td></tr><tr><td>siren</td><td class='num'>(-6, +49)</td><td class='num'>(-25, +96)</td><td class='num'>(-6, +49)</td><td class='num'>(-24, +96)</td><td class='num'>within 1 px</td></tr><tr><td>three_generations</td><td class='num'>(+14, +52)</td><td class='num'>(+11, +111)</td><td class='num'>(+12, +53)</td><td class='num'>(+9, +111)</td><td class='num'>within 2 px</td></tr><tr><td>tobolsk</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>(+3, +3)</td><td class='num'>(+3, +6)</td><td class='num'>identical</td></tr><tr><td>wharf</td><td class='num'>(-7, +15)</td><td class='num'>(-16, +82)</td><td class='num'>(-6, +15)</td><td class='num'>(-16, +82)</td><td class='num'>within 1 px</td></tr></tbody></table>
+
+<p>Only 1 plate really separates the two features: emir. Everywhere else raw intensity was already finding the right answer, so switching features changes nothing visible. On belaia_river, etruscan_vases, icon, ilemselga, melons, religous_painting, self_portrait, siren, three_generations, wharf the two features land within 2 pixels of each other, which is the refinement step picking a neighbouring displacement rather than either feature being better. At that size the difference is invisible in the stacked image. That is the honest summary: gradients are not a general improvement on this collection, they are a rescue for the one case where brightness matching has no chance.</p>
+
+<p>Because the real collection has no ground truth to check against, I also tested the two
+features on synthetic plates where I know the answer. Each test plate is a rendered scene
+split into three exposures, given its own tone curve and grain, and shifted by a displacement
+I choose. The hard variant contains a large region built to behave like the robe: the
+underlying structure and edges are identical across channels, but the region is bright in blue
+and dark in red.</p>
+
+
+
+<p>Raw matching is fine when the channels agree about brightness and unreliable when they do
+not. Gradient matching recovered the exact displacement in every trial of both kinds, which is
+why it is the default for the final images on this page. The same harness confirms the basics:
+single-scale and pyramid search both recover planted displacements exactly, at every size from
+a 341 pixel JPEG up to a 3100 pixel scan.</p>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>Cleaning up the picture</h2>
+
+<h3>Finding the border instead of guessing it</h3>
+
+<p>Cropping a fixed margin off every side is the easy version and it is wrong twice over: it
+removes real photograph on plates with thin borders and leaves frame behind on plates with
+thick ones. Instead I score every candidate row and column near each edge on three cues, each
+measured as the fraction of pixels along that line which qualify. A line is border-like if it
+is almost entirely near black, or almost entirely near white, or if the three channels
+disagree strongly along it. That last cue is the useful one and it comes from the structure of
+the problem: over real content the three exposures broadly agree, because they are pictures of
+the same thing, while at the edges of the plate they have nothing to agree about and produce
+violent colour fringes. I march inward from each side up to
+12 percent of the dimension and cut to just past the last
+border-like line, so one clean row inside the frame does not stop the cut early.</p>
+
+
+<figure class="wide pair">
+  <div><img src="images/cathedral_trimmed.jpg" alt="before automatic cropping">
+    <figcaption>Before cropping. The frame and the wrapped edges left by the shift are still there.</figcaption></div>
+  <div><img src="images/cathedral_cropped.jpg" alt="after automatic cropping">
+    <figcaption>After cropping: 1 rows off the top, 6 off the bottom,
+    11 columns off the left and 17 off the right, all found by the detector
+    rather than fixed in advance.</figcaption></div>
+</figure>
+
+<h3>Contrast</h3>
+
+<p>The black point is a low percentile of the per-pixel darkest channel and the white point a
+high percentile of the per-pixel brightest channel, and everything is stretched linearly
+between them. Using percentiles rather than the true minimum and maximum keeps a single dust
+speck or one blown highlight from defining the range. The same mapping is applied to all three
+channels so that the stretch cannot shift the colour balance, which is the white balance
+stage's job.</p>
+
+<h3>White balance</h3>
+
+<p>Estimating the illuminant properly is hard; applying a correction once you have one is easy.
+The obvious starting point is the gray-world assumption, which says the average colour of an
+ordinary scene is roughly neutral, so any overall tint in the average must be the illuminant.
+It works on interiors and portraits and it falls apart on landscapes, for a reason that is
+obvious in hindsight: half the frame is sky, the average colour of the scene really is blue,
+and forcing that average to gray drags the entire photograph magenta. Every one of my own
+three plates came out with a pink sky.</p>
+
+<p>The opposite assumption, white-world, maps the brightest surface to white. That survives the
+landscapes and then overcorrects the portraits, warming the Emir plate and the harvesters into
+a sunset that was not there.</p>
+
+<p>Both are special cases of one estimator. Take the Minkowski p-norm of each channel: at
+p&nbsp;=&nbsp;1 it is the mean, which is gray-world, and as p grows it approaches the maximum,
+which is white-world. A middle exponent weights bright pixels more heavily than the mean does
+without letting a single highlight decide the answer. I use p&nbsp;=&nbsp;6, the value Finlayson
+and Trezzi report as a good general setting, and it is the only one of the three that holds up
+on sky-filled landscapes and studio portraits at once. Gains are clamped to a sane range either
+way, because a scene that genuinely is mostly one colour would otherwise be corrected into gray
+mush. All three estimators stay selectable from the command line.</p>
+
+<h3>Channel mixing</h3>
+
+<p>There is no reason the dyes in Prokudin-Gorskii's filters match the primaries of the sRGB
+colour space my monitor uses. The filters passed broad, overlapping bands, so each recorded
+exposure contains some light that belongs to its neighbours, and treating the three strips
+directly as red, green and blue leaves colours flatter than they should be. I apply a small
+matrix that subtracts a little of each channel from the other two, with rows summing to about
+one so that neutral gray stays neutral. The mixing is done in linear light: the scans are
+gamma encoded, and adding and subtracting light is a linear-light operation, so I decode,
+mix, and re-encode. These coefficients are hand-set and deliberately mild. It is a plausible
+correction rather than a calibrated one, and I would want real measurements of the filters to
+claim anything stronger.</p>
+
+
+<figure class="wide pair">
+  <div><img src="images/cathedral_cropped.jpg" alt="before colour work">
+    <figcaption>Cropped, otherwise untouched.</figcaption></div>
+  <div><img src="images/cathedral_final.jpg" alt="after colour work">
+    <figcaption>After channel unmixing, white balance and the contrast stretch.</figcaption></div>
+</figure>
+
+<div class="mark"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>What I would do next</h2>
+
+<p>The model here is translation only. The plate holder also moved slightly out of plane, so
+some plates would benefit from searching over small rotations and scale changes as well, with
+the same coarse-to-fine structure keeping the extra two dimensions affordable. The other
+obvious extension is to score the metric on a Laplacian pyramid band rather than on raw
+intensity or gradient magnitude, which would give the match a band of spatial frequencies to
+work with instead of committing to one.</p>
+
+<p class="note">Every number on this page was produced by the code in the submission and read
+from its results file, rather than typed in by hand. Parameters were fixed once for the whole
+collection: search radius 15 at the coarsest level,
+&plusmn;2 refinement per level, coarsest level 128
+pixels, scoring margin 15 percent.</p>
+</div>
+</body>
+</html>
