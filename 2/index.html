@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fun with Filters and Frequencies - CS180 Project 2</title>
+<meta name="description" content="CS180 Project 2: convolution, edge detection, sharpening, hybrid images and multiresolution blending.">
+<style>
+:root {
+  --ink: #1f2328;
+  --muted: #5b6570;
+  --hair: #d4d8dc;
+  --blue: #2f5da8;
+  --green: #2c7a4b;
+  --red: #a8382c;
+  --serif: "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
+  --sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--serif);
+  color: var(--ink);
+  line-height: 1.62;
+  font-size: 17px;
+  margin: 0;
+  padding: 0 1.25rem 5rem;
+}
+.col { max-width: 41rem; margin: 0 auto; }
+.wide { width: min(62rem, calc(100vw - 2.5rem)); margin-left: 50%;
+         transform: translateX(-50%); margin-top: 2.2rem; margin-bottom: 2.2rem; }
+p { margin: 0 0 1.05rem; }
+a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+h1 { font-size: 2.15rem; line-height: 1.18; font-weight: 600; margin: 0 0 .6rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.42rem; font-weight: 600; margin: .5rem 0 .9rem; letter-spacing: -0.005em; }
+h3 { font-family: var(--sans); font-size: .95rem; font-weight: 600; margin: 1.9rem 0 .5rem; }
+
+/* Section mark: three rules getting shorter, a low-pass band, a middle band
+   and a high-pass band, the way this whole project slices an image. */
+.mark { width: 3.1rem; margin: 3.4rem 0 1.1rem; }
+.mark span { display: block; height: 0; border-top: 3px solid; margin-bottom: 2px; }
+.mark .b { border-color: var(--blue); }
+.mark .g { border-color: var(--green); width: 66%; }
+.mark .r { border-color: var(--red); width: 33%; }
+.col > .mark:first-of-type { margin-top: 2.2rem; }
+
+.byline { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin: 0 0 2rem; }
+.byline span { display: block; }
+.lede { font-size: 1.1rem; }
+
+figure { margin: 2rem 0; }
+figcaption { font-family: var(--sans); font-size: .8rem; line-height: 1.5; color: var(--muted); margin-top: .5rem; }
+img { display: block; width: 100%; height: auto; border: 1px solid var(--hair); }
+img.px { image-rendering: pixelated; }
+
+.row, .row4, .row5, .pair, .row6 { display: grid; gap: .8rem; }
+.row { grid-template-columns: repeat(3, 1fr); }
+.row4 { grid-template-columns: repeat(4, 1fr); }
+.row5 { grid-template-columns: repeat(5, 1fr); }
+.row6 { grid-template-columns: repeat(6, 1fr); gap: .5rem; }
+.pair { grid-template-columns: 1fr 1fr; }
+.row figcaption, .row4 figcaption, .row5 figcaption, .row6 figcaption, .pair figcaption { margin-top: .35rem; }
+.narrow { max-width: 26rem; }
+
+/* Figure 3.42 grid: a row label column, then three image columns. */
+.grid342 { display: grid; grid-template-columns: 4.5rem repeat(3, 1fr); gap: .5rem; align-items: center; }
+.grid342 .lab { font-family: var(--sans); font-size: .75rem; color: var(--muted); }
+.grid342 .head { font-family: var(--sans); font-size: .75rem; color: var(--muted); text-align: center; }
+
+table { border-collapse: collapse; width: 100%; font-family: var(--sans);
+        font-size: .82rem; font-variant-numeric: tabular-nums; margin: 1.2rem 0 1.6rem; }
+caption { caption-side: bottom; text-align: left; font-family: var(--sans);
+          font-size: .78rem; color: var(--muted); padding-top: .55rem; }
+th, td { text-align: left; padding: .38rem .7rem .38rem 0; border-bottom: 1px solid var(--hair); }
+thead th { border-bottom: 1.5px solid var(--ink); font-weight: 600; }
+td.num, th.num { text-align: right; padding-right: 1.1rem; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+
+code { font-family: var(--mono); font-size: .86em; }
+pre { font-family: var(--mono); font-size: .76rem; line-height: 1.5; background: #f5f6f7;
+      border-left: 3px solid var(--blue); padding: .9rem 1rem; overflow-x: auto; margin: 1.2rem 0 1.6rem; }
+ul { margin: 0 0 1.05rem; padding-left: 1.15rem; }
+li { margin-bottom: .4rem; }
+.note { font-family: var(--sans); font-size: .85rem; color: var(--muted);
+        border-left: 2px solid var(--hair); padding-left: .9rem; margin: 1.5rem 0; }
+.toc { font-family: var(--sans); font-size: .88rem; }
+.toc a { text-decoration: none; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .row, .pair { grid-template-columns: 1fr; }
+  .row4, .row5, .row6 { grid-template-columns: 1fr 1fr; }
+  .grid342 { grid-template-columns: 3rem repeat(3, 1fr); }
+  h1 { font-size: 1.7rem; }
+}
+@media print {
+  body { font-size: 10.5pt; padding: 0; }
+  .col { max-width: none; }
+  .wide { width: 100%; margin-left: 0; transform: none; }
+  a { color: var(--ink); }
+  figure, table, pre, .grid342 { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+  .mark { margin-top: 1.6rem; }
+  figure { margin: 1.1rem 0; }
+  .row img, .row4 img, .row5 img, .row6 img, .pair img { max-height: 70mm; object-fit: contain; }
+  figure > img { max-height: 150mm; object-fit: contain; }
+  pre { font-size: 7.5pt; white-space: pre-wrap; }
+}
+</style>
+</head>
+<body>
+
+<div class="col">
+<h1>Fun with Filters and Frequencies</h1>
+<p class="byline"><span>Chen Kangxiang</span><span>CS180, Project 2</span>
+<span>2026-09-22</span></p>
+
+<p class="lede">Almost everything on this page is one operation, convolution, applied
+with different kernels. A small difference kernel finds edges. A Gaussian keeps the slow
+changes in an image and throws away the fast ones, and subtracting it keeps the fast ones
+instead. Once an image can be split into slow and fast parts like that, the parts can be
+boosted, swapped between images, or joined along a seam one band at a time.</p>
+
+<p class="toc"><a href="#p11">1.1 Convolution from scratch</a><br>
+<a href="#p12">1.2 Finite difference operator</a><br>
+<a href="#p13">1.3 Derivative of Gaussian, and gradient orientation</a><br>
+<a href="#p21">2.1 Sharpening</a><br>
+<a href="#p22">2.2 Hybrid images</a><br>
+<a href="#p23">2.3 Gaussian and Laplacian stacks</a><br>
+<a href="#p24">2.4 Multiresolution blending</a><br>
+<a href="#learned">What I learned</a></p>
+
+<!-- ============================================================ 1.1 -->
+<div class="mark" id="p11"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>1.1 Convolution from scratch</h2>
+
+<p>Convolving an image <code>f</code> with a kernel <code>h</code> means that every output
+pixel is a weighted sum of the input pixels around it, with the kernel supplying the weights
+<em>after being flipped</em> in both directions:
+<code>(f * h)[i, j] = &Sigma;<sub>u,v</sub> h[u, v] f[i &minus; u, j &minus; v]</code>. Without
+the flip the same loop computes correlation instead. For symmetric kernels such as a box or
+a Gaussian the two are identical, which is exactly why the flip is easy to forget and hard to
+catch. For <code>D<sub>x</sub> = [1, 0, &minus;1]</code> it matters: convolution gives
+<code>f(x+1) &minus; f(x&minus;1)</code>, correlation gives the negative of that.</p>
+
+<p>Pixels near the border need neighbours that do not exist. I pad the image with zeros so
+the output keeps the input's size ("same" mode). I wrote three versions:</p>
+<ul>
+<li><strong>Four loops.</strong> Two over output pixels and two over kernel taps, one
+multiply-add at a time.</li>
+<li><strong>Two loops over pixels.</strong> For each output pixel, cut out the window under
+the kernel and take one vectorised weighted sum.</li>
+<li><strong>Two loops over kernel taps.</strong> The same sum reorganised: each tap adds a
+weighted, shifted copy of the whole padded image, and a shifted copy is just an array slice.
+This is still two for loops, but they run 81 times for a 9&times;9 kernel instead of once per
+pixel.</li>
+</ul>
+
+<pre><code>def zero_pad(image, kh, kw):
+    &quot;&quot;&quot;Pad with zeros so a kh x kw kernel centred on any pixel stays in bounds.&quot;&quot;&quot;
+    top, left = kh // 2, kw // 2
+    bottom, right = kh - 1 - top, kw - 1 - left
+    h, w = image.shape
+    padded = np.zeros((h + top + bottom, w + left + right), dtype=np.float64)
+    padded[top:top + h, left:left + w] = image
+    return padded
+
+
+def conv2d_four_loops(image, kernel):
+    &quot;&quot;&quot;Two loops over output pixels, two loops over kernel taps.&quot;&quot;&quot;
+    image = np.asarray(image, dtype=np.float64)
+    # Flip in both axes: convolution is correlation with the flipped kernel.
+    k = np.asarray(kernel, dtype=np.float64)[::-1, ::-1]
+    kh, kw = k.shape
+    h, w = image.shape
+    padded = zero_pad(image, kh, kw)
+    out = np.zeros((h, w))
+    for i in range(h):
+        for j in range(w):
+            acc = 0.0
+            for u in range(kh):
+                for v in range(kw):
+                    acc += k[u, v] * padded[i + u, j + v]
+            out[i, j] = acc
+    return out
+
+
+def conv2d_two_loops(image, kernel):
+    &quot;&quot;&quot;Two loops over output pixels; the kernel sum is one vectorised dot product.&quot;&quot;&quot;
+    image = np.asarray(image, dtype=np.float64)
+    k = np.asarray(kernel, dtype=np.float64)[::-1, ::-1]
+    kh, kw = k.shape
+    h, w = image.shape
+    padded = zero_pad(image, kh, kw)
+    out = np.zeros((h, w))
+    for i in range(h):
+        for j in range(w):
+            out[i, j] = np.sum(padded[i:i + kh, j:j + kw] * k)
+    return out
+
+
+def conv2d_kernel_loops(image, kernel):
+    &quot;&quot;&quot;Also two loops, but over kernel taps instead of pixels.
+
+    Each tap contributes weight * (the padded image shifted by that tap), and a
+    shifted image is a single array slice. The Python loop now runs kh*kw times
+    (81 for a 9x9 box) instead of h*w times (hundreds of thousands), which is
+    why this version is close to scipy in speed.
+    &quot;&quot;&quot;
+    image = np.asarray(image, dtype=np.float64)
+    k = np.asarray(kernel, dtype=np.float64)[::-1, ::-1]
+    kh, kw = k.shape
+    h, w = image.shape
+    padded = zero_pad(image, kh, kw)
+    out = np.zeros((h, w))
+    for u in range(kh):
+        for v in range(kw):
+            out += k[u, v] * padded[u:u + h, v:v + w]
+    return out
+</code></pre>
+
+<h3>Does it match scipy?</h3>
+<p>I compared all three against
+<code>scipy.signal.convolve2d(f, h, mode="same", boundary="fill", fillvalue=0)</code>, first on
+a random 37&times;51 image with a random, deliberately <em>asymmetric</em> 5&times;7 kernel, so
+that a missing flip could not hide. The largest absolute differences were 5.3&times;10<sup>&minus;15</sup> (four loops),
+5.3&times;10<sup>&minus;15</sup> (two loops over pixels) and 5.3&times;10<sup>&minus;15</sup> (loops over taps): floating point rounding
+and nothing else. As a check that the test can fail, running the pixel-loop version with the
+flip removed gives a maximum error of 3.13. On the real image and the three kernels
+below, every version agrees with scipy to within 2.3&times;10<sup>&minus;15</sup>.</p>
+
+<h3>Runtime</h3>
+<table>
+<thead><tr><th>kernel</th><th class=num>four loops</th><th class=num>two loops (pixels)</th>
+<th class=num>two loops (taps)</th><th class=num>scipy</th></tr></thead>
+<tbody>
+<tr><td>9&times;9 box</td><td class=num>4.05 s</td><td class=num>634.7 ms</td><td class=num>22.9 ms</td><td class=num>29.4 ms</td></tr>
+<tr><td>D<sub>x</sub></td><td class=num>197.4 ms</td><td class=num>594.8 ms</td><td class=num>2.4 ms</td><td class=num>2.2 ms</td></tr>
+<tr><td>D<sub>y</sub></td><td class=num>224.4 ms</td><td class=num>592.7 ms</td><td class=num>1.7 ms</td><td class=num>4.0 ms</td></tr>
+</tbody>
+<caption>Wall-clock time on the 360 &times; 480 grayscale portrait, measured once
+each by <code>main.py</code>.</caption>
+</table>
+
+<p>For the 9&times;9 box the four-loop version is about 138 times slower than
+scipy, and looping over pixels with a vectorised inner sum only brings that down to about
+22 times. The cost is not the arithmetic, it is how many times the Python
+interpreter goes round a loop: once per pixel is already a few hundred thousand trips. The
+three-tap difference kernels make the point from the other side. There, four loops
+(197.4 ms) beat two loops over pixels (594.8 ms), because calling <code>np.sum</code> on a
+three-element window costs more than three plain Python multiply-adds. Looping over taps
+instead of pixels makes the Python loop tiny and leaves the per-pixel work to numpy, and it
+lands in the same range as scipy, which does the whole thing in compiled code.</p>
+
+<h3>Results on my portrait</h3>
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p11_self_gray.jpg" alt="grayscale portrait"><figcaption>Input, grayscale.</figcaption></div>
+  <div><img src="images/p11_self_box.jpg" alt="box filtered"><figcaption>9&times;9 box filter.</figcaption></div>
+  <div><img src="images/p11_self_dx.jpg" alt="D_x"><figcaption>D<sub>x</sub>: mid gray is zero, white means brighter to the right.</figcaption></div>
+  <div><img src="images/p11_self_dy.jpg" alt="D_y"><figcaption>D<sub>y</sub>: white means brighter downwards.</figcaption></div>
+</figure>
+</div>
+<p>The portrait is the one from my Project 0 page. D<sub>x</sub> lights up the vertical parts
+of the glasses frame and the window mullions and ignores horizontal edges; D<sub>y</sub>
+does the reverse, with the eyebrows and the top and bottom of the frames. The box filter
+does the blurring job, but it is a cruder low-pass than a Gaussian: its frequency response
+has sidelobes, so some fine detail leaks through instead of fading out smoothly.</p>
+
+<h3>Boundaries</h3>
+<p>Zero padding treats everything outside the picture as black. Where the image is bright at
+its edge, a dark frame appears: along the top row, 36 of the 81 pixels in each 9&times;9
+average are padding zeros (56 at the corners). Along the top of the portrait over the bright back wall, the first
+output row averages 0.35 with zero fill, against 0.63 for the actual pixels.
+Scipy's <code>boundary="symm"</code> mirrors the image outwards instead and gives
+0.63. So for the rest of the project I call <code>convolve2d</code> with
+<code>boundary="symm"</code>: a mirrored border has no jump in it, so it creates no fake edge
+for a derivative to find and no dark rim after a blur. My own implementations stay with zero
+fill, since that is what the part asks for.</p>
+<figure class="pair narrow">
+  <div><img class="px" src="images/p11_border_fill.png" alt="zero fill border"><figcaption>Zero fill: a dark band along the top edge.</figcaption></div>
+  <div><img class="px" src="images/p11_border_symm.png" alt="mirrored border"><figcaption>Mirrored border: no band.</figcaption></div>
+</figure>
+
+<!-- ============================================================ 1.2 -->
+<div class="mark" id="p12"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>1.2 Finite difference operator</h2>
+
+<p>Convolving with D<sub>x</sub> and D<sub>y</sub> approximates the partial derivatives
+&part;f/&part;x and &part;f/&part;y. Together they form the gradient, a small arrow at every
+pixel pointing uphill in brightness, and its length
+<code>&radic;(g<sub>x</sub><sup>2</sup> + g<sub>y</sub><sup>2</sup>)</code> says how steep the
+change is regardless of its direction. Thresholding that length gives an edge map.</p>
+
+<p class="note">One fix before any of that. The course's <code>cameraman.png</code> is a
+540 &times; 542 RGBA file with a partly transparent white frame: 7 rows on top, 1
+at the bottom, 1 column on the left and 5 on the right. Left in, the frame
+differentiates into a bright rectangle around the whole edge map (first image below). The
+code trims every outer row and column that is at least 99% white, leaving 534 &times; 534 pixels.</p>
+
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p12_frame_artifact.png" alt="frame artifact"><figcaption>Untrimmed file: the frame shows up as edges.</figcaption></div>
+  <div><img src="images/p12_dx.jpg" alt="dx"><figcaption>&part;f/&part;x.</figcaption></div>
+  <div><img src="images/p12_dy.jpg" alt="dy"><figcaption>&part;f/&part;y.</figcaption></div>
+  <div><img src="images/p12_mag.jpg" alt="gradient magnitude"><figcaption>Gradient magnitude.</figcaption></div>
+</figure>
+<figure class="row5">
+  <div><img src="images/p12_edges_15.png" alt="t 0.15"><figcaption>threshold 0.15</figcaption></div>
+  <div><img src="images/p12_edges_20.png" alt="t 0.20"><figcaption>0.20</figcaption></div>
+  <div><img src="images/p12_edges_25.png" alt="t 0.25"><figcaption>0.25</figcaption></div>
+  <div><img src="images/p12_edges_30.png" alt="t 0.30"><figcaption>0.30 (chosen)</figcaption></div>
+  <div><img src="images/p12_edges_40.png" alt="t 0.40"><figcaption>0.40</figcaption></div>
+</figure>
+</div>
+
+<p>Intensities run from 0 to 1, so a magnitude of 0.3 means brightness changes by about 0.3
+across three pixels. At 0.25 and below the grass fills with speckle: its texture has real
+pixel-to-pixel contrast, and the difference operator cannot tell texture from an edge. At 0.40
+the camera's tripod legs start to break into dashes and the distant buildings are gone. I chose
+<strong>0.30</strong>, which marks 3.7% of pixels. The trade-off I accepted: a few
+specks of grass survive in the lower left and the faint buildings on the horizon are only
+partly there. Pushing the threshold higher to remove the specks costs real outline of the man
+and the tripod, which I care about more. No single threshold gets both, because the noise and
+the faint edges have similar gradient strength. That is the problem the next part fixes.</p>
+
+<!-- ============================================================ 1.3 -->
+<div class="mark" id="p13"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>1.3 Derivative of Gaussian (DoG) filter</h2>
+
+<p>Differentiation amplifies whatever changes fastest, and pixel noise and fine texture change
+fastest of all. Smoothing first removes them before the derivative sees them. I build a 2D
+Gaussian with &sigma; = 2 by taking the outer product of
+<code>cv2.getGaussianKernel(13, 2)</code> with its own transpose. The size follows
+the usual rule of about 3&sigma; on each side of the centre, which keeps over 99.7% of the
+weight.</p>
+
+<div class="wide">
+<figure class="row5">
+  <div><img src="images/p13_blurred.jpg" alt="blurred"><figcaption>Blurred, &sigma; = 2.</figcaption></div>
+  <div><img src="images/p13_dx.jpg" alt="dx blurred"><figcaption>&part;/&part;x of the blurred image.</figcaption></div>
+  <div><img src="images/p13_dy.jpg" alt="dy blurred"><figcaption>&part;/&part;y.</figcaption></div>
+  <div><img src="images/p13_mag.jpg" alt="magnitude blurred"><figcaption>Gradient magnitude.</figcaption></div>
+  <div><img src="images/p13_edges.png" alt="edges blurred"><figcaption>Edges, threshold 0.07.</figcaption></div>
+</figure>
+<figure class="row5">
+  <div><img src="images/p13_edges_04.png" alt="0.04"><figcaption>threshold 0.04</figcaption></div>
+  <div><img src="images/p13_edges_07.png" alt="0.07"><figcaption>0.07 (chosen)</figcaption></div>
+  <div><img src="images/p13_edges_10.png" alt="0.10"><figcaption>0.10</figcaption></div>
+  <div><img src="images/p13_edges_13.png" alt="0.13"><figcaption>0.13</figcaption></div>
+  <div><img src="images/p13_edges_18.png" alt="0.18"><figcaption>0.18</figcaption></div>
+</figure>
+</div>
+
+<p><strong>What changes compared with 1.2.</strong> The noise is gone: at a threshold that
+still keeps the buildings on the horizon, the grass is almost clean, which no threshold could
+manage on the raw image. The edges are also continuous rather than broken into dashes, since
+the blur spreads each edge's response over several pixels and bridges small gaps. The price is
+that edges are thicker and less precisely placed: a step edge now produces a ramp of gradient
+several pixels wide, so the binary map draws a band rather than a line, and details closer
+together than roughly &sigma; merge. The threshold has to come down too, from 0.30 to
+<strong>0.07</strong>, because blurring spreads the same brightness step over a wider
+distance and lowers the peak slope. I chose 0.07 because it keeps the horizon buildings
+while leaving only a few isolated specks in the grass; 0.10 already starts to drop the
+buildings.</p>
+
+<h3>One convolution instead of two</h3>
+<p>Convolution is associative, <code>(f * G) * D<sub>x</sub> = f * (G * D<sub>x</sub>)</code>,
+so the blur and the difference can be merged into a single derivative-of-Gaussian kernel
+before touching the image. Convolving the 13&times;13 Gaussian with the 1&times;3
+D<sub>x</sub> in "full" mode gives a 13&times;15 kernel: a positive lobe next to a
+negative one, a smoothed version of [1, 0, &minus;1].</p>
+<figure class="row narrow" style="max-width:30rem">
+  <div><img class="px" src="images/p13_gauss_kernel.png" alt="Gaussian"><figcaption>Gaussian G.</figcaption></div>
+  <div><img class="px" src="images/p13_dog_x.png" alt="DoG x"><figcaption>G * D<sub>x</sub>.</figcaption></div>
+  <div><img class="px" src="images/p13_dog_y.png" alt="DoG y"><figcaption>G * D<sub>y</sub>.</figcaption></div>
+</figure>
+<p>Applying the two DoG filters directly to the image gives the same gradients as blurring and
+then differencing: the largest difference anywhere in the image, border included, is
+1.0&times;10<sup>&minus;15</sup>, and the two binary edge maps agree on 100.00% of pixels. I expected
+disagreements within a few pixels of the border, since mirroring a blurred image is not
+obviously the same as blurring a mirrored one. They turn out to be identical here because the
+Gaussian is symmetric: blurring a mirror-extended image gives a result that is itself
+mirror-symmetric about the edge, so it does not matter which is done first.</p>
+<figure class="pair narrow">
+  <div><img src="images/p13_mag_dog.jpg" alt="DoG magnitude"><figcaption>Gradient magnitude from the DoG filters.</figcaption></div>
+  <div><img src="images/p13_edges_dog.png" alt="DoG edges"><figcaption>Edges from the DoG filters, threshold 0.07.</figcaption></div>
+</figure>
+
+<h3>Bells and whistles: gradient orientation</h3>
+<p>The gradient's direction is the angle &theta; with cos &theta; = g<sub>x</sub>/|g| and
+sin &theta; = g<sub>y</sub>/|g|. The usual way to colour it is to compute &theta; with
+<code>arctan2</code> and use it as the hue. But a colour wheel never needs &theta; itself,
+only its cosine and sine, and those are just the normalised gradient components. So I set
+each RGB channel to <code>0.5 + 0.5 cos(&theta; &minus; &phi;<sub>c</sub>)</code> with fixed
+&phi;<sub>c</sub> = 0&deg;, 120&deg;, 240&deg; for red, green and blue, and expand it with
+the angle-difference identity, <code>cos &theta; cos &phi; + sin &theta; sin &phi;</code>, so
+no angle is ever computed from the image. Each pixel's colour is then stretched to full
+saturation, which makes hue the only thing that varies with direction, and scaled by gradient
+magnitude, which plays the role of HSV's value. Flat regions go black, strong edges are bright,
+and the hue says which way the edge faces.</p>
+<p>Direction has a subtlety. A dark-to-light edge and a light-to-dark edge at the same angle
+point opposite ways, so they get opposite hues: the left and right sides of the tripod legs
+come out in complementary colours. If what matters is the edge's <em>orientation</em> rather
+than which side is brighter, doubling the angle folds the two together. That also needs no
+angle function: <code>cos 2&theta; = c<sup>2</sup> &minus; s<sup>2</sup></code> and
+<code>sin 2&theta; = 2sc</code>.</p>
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p13_orient_dir.jpg" alt="direction"><figcaption>Gradient direction (0 to 360&deg;).</figcaption></div>
+  <div><img src="images/p13_orient_wheel.png" alt="direction key"><figcaption>Key: the colour of a gradient pointing from the centre towards that point, with y pointing down as in the image. Red: brighter to the right.</figcaption></div>
+  <div><img src="images/p13_orient_edge.jpg" alt="orientation"><figcaption>Edge orientation (0 to 180&deg;): both sides of each tripod leg now share a colour.</figcaption></div>
+  <div><img src="images/p13_orient_wheel_edge.png" alt="orientation key"><figcaption>Key for orientation: opposite directions share a colour.</figcaption></div>
+</figure>
+</div>
+
+<!-- ============================================================ 2.1 -->
+<div class="mark" id="p21"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>2.1 Image "sharpening"</h2>
+
+<p>A Gaussian blur keeps the low frequencies. Subtracting the blurred image from the original
+leaves what the blur removed: the high frequencies, the edges and fine detail. Adding a
+multiple &alpha; of that detail back makes edges steeper, which reads as sharper:</p>
+<p style="text-align:center"><code>f + &alpha;(f &minus; f * g) = f * ((1 + &alpha;) e &minus; &alpha; g)</code></p>
+<p>where <code>e</code> is the unit impulse, the kernel that leaves an image unchanged. The
+right-hand side is the unsharp mask filter: a single kernel, a tall spike at the centre sitting
+in a shallow negative moat. Applied as one convolution it matches the three-step version to
+1.8&times;10<sup>&minus;15</sup>. Everything below uses &sigma; = 2 for the blur.</p>
+
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p21_taj_orig.jpg" alt="taj"><figcaption>Original.</figcaption></div>
+  <div><img src="images/p21_taj_blur.jpg" alt="taj blurred"><figcaption>Blurred, f * g (low frequencies).</figcaption></div>
+  <div><img src="images/p21_taj_high.jpg" alt="taj high"><figcaption>f &minus; f * g (high frequencies), mid gray = 0.</figcaption></div>
+  <div><img src="images/p21_taj_sharp.jpg" alt="taj sharp"><figcaption>Sharpened, &alpha; = 1.</figcaption></div>
+</figure>
+<figure class="row4">
+  <div><img src="images/p21_taj_a0.5.jpg" alt="0.5"><figcaption>&alpha; = 0.5</figcaption></div>
+  <div><img src="images/p21_taj_a1.jpg" alt="1"><figcaption>&alpha; = 1</figcaption></div>
+  <div><img src="images/p21_taj_a2.jpg" alt="2"><figcaption>&alpha; = 2</figcaption></div>
+  <div><img src="images/p21_taj_a4.jpg" alt="4"><figcaption>&alpha; = 4</figcaption></div>
+</figure>
+</div>
+<p>Small &alpha; makes the carving on the facade and the edges of the arches crisper.
+Large &alpha; overshoots: every edge gets a light halo on its bright side and a dark one on
+its shadow side, since the negative moat of the kernel subtracts neighbours. The halos show
+most around the dark cypress trees against the pale path, and at &alpha; = 4 the flat sky picks
+up grain that was always there but too faint to see. Even at &alpha; = 1,
+9% of the pixel values land outside [0, 1] and have to be clipped: that is the
+overshoot in numbers.</p>
+
+<p>The same filter on a photo of my own, a parking lot with palms against a clear sky, where
+the fronds and the thin wires of the sign are the high-frequency detail:</p>
+<div class="wide">
+<figure class="row5">
+  <div><img src="images/p21_lot_orig.jpg" alt="lot"><figcaption>Original.</figcaption></div>
+  <div><img src="images/p21_lot_blur.jpg" alt="lot blurred"><figcaption>Blurred.</figcaption></div>
+  <div><img src="images/p21_lot_high.jpg" alt="lot high"><figcaption>High frequencies.</figcaption></div>
+  <div><img src="images/p21_lot_a1.jpg" alt="lot a1"><figcaption>&alpha; = 1</figcaption></div>
+  <div><img src="images/p21_lot_a4.jpg" alt="lot a4"><figcaption>&alpha; = 4</figcaption></div>
+</figure>
+</div>
+
+<h3>Evaluation: blur a sharp image, then sharpen it</h3>
+<p>To see what sharpening actually recovers, I took a sharp image, blurred it with
+&sigma; = 2, and sharpened the blurred copy with the same &sigma; and several &alpha;. The
+original is the ground truth, so I can measure the error with PSNR (peak signal-to-noise
+ratio, 10&middot;log<sub>10</sub>(1 / mean squared error), higher is closer).</p>
+<div class="wide">
+<figure class="row4">
+  <div><img class="px" src="images/p21_eval_crop_orig.png" alt="orig crop"><figcaption>Original (crop, 3&times;).</figcaption></div>
+  <div><img class="px" src="images/p21_eval_crop_blurred.png" alt="blurred crop"><figcaption>Blurred, &sigma; = 2.</figcaption></div>
+  <div><img class="px" src="images/p21_eval_crop_sharp.png" alt="resharpened crop"><figcaption>Resharpened, &alpha; = 1.</figcaption></div>
+  <div><img class="px" src="images/p21_eval_crop_sharp4.png" alt="resharpened 4"><figcaption>Resharpened, &alpha; = 4.</figcaption></div>
+</figure>
+</div>
+<table style="max-width:24rem">
+<thead><tr><th>image</th><th class=num>PSNR vs original</th></tr></thead>
+<tbody>
+<tr><td>blurred, &sigma; = 2</td><td class=num>24.99 dB</td></tr>
+<tr><td>resharpened, &alpha; = 0.5</td><td class=num>25.92 dB</td></tr>
+<tr><td>resharpened, &alpha; = 1</td><td class=num>26.72 dB</td></tr>
+<tr><td>resharpened, &alpha; = 2</td><td class=num>27.56 dB</td></tr>
+<tr><td>resharpened, &alpha; = 4</td><td class=num>25.90 dB</td></tr>
+</tbody>
+<caption>Whole image, all three channels.</caption>
+</table>
+<figure>
+  <img src="images/p21_eval_spectrum.png" alt="radial spectra">
+  <figcaption>Average Fourier magnitude at each spatial frequency (Hann-windowed, so the
+  image's wrap-around edges do not leak energy into every frequency).</figcaption>
+</figure>
+<p>Sharpening helps, but it does not restore the original. PSNR rises from 25.0 dB
+to 27.6 dB at &alpha; = 2 and falls again for larger &alpha;, as the halos start
+costing more than the extra contrast gains. Visually the resharpened patch has firmer outlines
+around the shuttle and the flag, but the small lettering around the rim of the patch is not
+coming back at any &alpha;. The spectrum says why. Blurring multiplied every frequency by the
+Gaussian's response, which for &sigma; = 2 is under 20% at 0.15 cycles per pixel and under 1%
+by 0.25, so the finest detail is essentially gone, and what little survives sits near the level
+of JPEG noise. Unsharp masking can only rescale what is still there: it lifts the middle
+band, where the blurred curve sits below the original, back towards it, and at large &alpha;
+overshoots it. It cannot create the fine lettering from nothing. Sharpening is a contrast
+boost for mid-to-high frequencies, not an undo button.</p>
+
+<!-- ============================================================ 2.2 -->
+<div class="mark" id="p22"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>2.2 Hybrid images</h2>
+
+<p>A hybrid image is the low frequencies of one picture plus the high frequencies of another
+(Oliva, Torralba and Schyns, 2006). Close up the eye resolves fine detail and the
+high-frequency image dominates; from far away, or small on screen, that detail is below what
+the eye can resolve and only the smooth low-frequency picture is left. The recipe:</p>
+<ul>
+<li><strong>Align.</strong> I click the two eye centres in each image; two points fix a
+scale, a rotation and a translation, and the low-frequency image is warped so its eyes land on
+the other image's eyes. I always warp the low-frequency image, because it is about to be
+blurred anyway, so resampling it costs nothing that will be visible; the high-frequency image,
+whose fine detail matters, is never resampled.</li>
+<li><strong>Low-pass</strong> the first image with a Gaussian of standard deviation
+&sigma;<sub>low</sub>.</li>
+<li><strong>High-pass</strong> the second with impulse minus Gaussian, that is the image minus
+its own blur at &sigma;<sub>high</sub>.</li>
+<li><strong>Add</strong> them.</li>
+</ul>
+<p>The cutoff frequency is where a filter's gain crosses one half. A Gaussian of standard
+deviation &sigma; pixels has frequency response exp(&minus;2&pi;<sup>2</sup>&sigma;<sup>2</sup>f<sup>2</sup>),
+which equals 0.5 at f &asymp; 0.187 / &sigma; cycles per pixel. So the low-pass cutoff is
+0.187/&sigma;<sub>low</sub> and the high-pass cutoff is 0.187/&sigma;<sub>high</sub>.
+&sigma;<sub>low</sub> has to be larger than &sigma;<sub>high</sub>, so that the low-pass
+cutoff sits below the high-pass one; otherwise the band in between belongs to both images at
+full strength and neither reading wins at any distance.</p>
+
+<table>
+<thead><tr><th>hybrid</th><th class=num>size</th><th class=num>&sigma;<sub>low</sub></th>
+<th class=num>low cutoff</th><th class=num>&sigma;<sub>high</sub></th><th class=num>high cutoff</th></tr></thead>
+<tbody>
+<tr><td>Derek + Nutmeg</td><td class=num>540 &times; 787</td><td class=num>7</td><td class=num>0.027 (14)</td><td class=num>4</td><td class=num>0.047 (25)</td></tr>
+<tr><td>astronaut + mandrill</td><td class=num>512 &times; 512</td><td class=num>6</td><td class=num>0.031 (16)</td><td class=num>3</td><td class=num>0.062 (32)</td></tr>
+<tr><td>dog + cat</td><td class=num>451 &times; 292</td><td class=num>5</td><td class=num>0.037 (17)</td><td class=num>3</td><td class=num>0.062 (28)</td></tr>
+</tbody>
+<caption>Cutoffs in cycles per pixel, with cycles across the image width in brackets.
+All hybrids are grayscale except in the colour experiment at the end.</caption>
+</table>
+
+<h3>Derek and Nutmeg</h3>
+<div class="wide">
+<figure class="row">
+  <div><img src="images/p22_derek_nutmeg_in_low.jpg" alt="Derek"><figcaption>Derek (low frequencies).</figcaption></div>
+  <div><img src="images/p22_derek_nutmeg_in_high.jpg" alt="Nutmeg"><figcaption>Nutmeg (high frequencies).</figcaption></div>
+  <div><img src="images/p22_derek_nutmeg_hybrid.jpg" alt="hybrid"><figcaption>Hybrid.</figcaption></div>
+</figure>
+<figure>
+  <img src="images/p22_derek_nutmeg_distance.jpg" alt="Derek Nutmeg at several sizes">
+  <figcaption>The same hybrid at full, half, quarter and eighth size: a stand-in for walking
+  away from the screen. The cat fades out and Derek is left.</figcaption>
+</figure>
+</div>
+
+<h3>My favourite, step by step: an astronaut and a mandrill</h3>
+<p>Eileen Collins's official NASA portrait supplies the low frequencies and a mandrill the
+high ones. The two faces are very different in size: the mandrill's eyes are 161 pixels apart
+and the astronaut's 44, so the astronaut is scaled up by 3.66 to match. That would be a
+problem for a high-pass image, but not for a low-pass one.</p>
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p22_astro_mandrill_in_low.jpg" alt="astronaut original"><figcaption>Original, low-frequency source.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_in_high.jpg" alt="mandrill original"><figcaption>Original, high-frequency source.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_aligned_low.jpg" alt="astronaut aligned"><figcaption>Astronaut aligned onto the mandrill by the eyes.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_aligned_high.jpg" alt="mandrill aligned"><figcaption>Mandrill, the reference frame (unchanged).</figcaption></div>
+</figure>
+<figure class="row">
+  <div><img src="images/p22_astro_mandrill_low.jpg" alt="low passed"><figcaption>Low-passed astronaut, &sigma; = 6.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_high.jpg" alt="high passed"><figcaption>High-passed mandrill, &sigma; = 3 (mid gray = 0).</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_hybrid.jpg" alt="hybrid"><figcaption>Their sum, the hybrid.</figcaption></div>
+</figure>
+<figure class="row5">
+  <div><img src="images/p22_astro_mandrill_fft_in_low.jpg" alt="fft astronaut"><figcaption>log |F|, astronaut (aligned).</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_fft_in_high.jpg" alt="fft mandrill"><figcaption>Mandrill.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_fft_f_low.jpg" alt="fft low"><figcaption>Low-passed astronaut.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_fft_f_high.jpg" alt="fft high"><figcaption>High-passed mandrill.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_fft_hybrid.jpg" alt="fft hybrid"><figcaption>Hybrid.</figcaption></div>
+</figure>
+</div>
+<p>The spectra use <code>np.log(np.abs(np.fft.fftshift(np.fft.fft2(image))))</code>, all on one
+shared colour scale, with the zero frequency in the centre. The mandrill's fur gives it energy
+far out towards the corners; the upscaled astronaut is already concentrated near the centre.
+Low-passing leaves only a small central blob. High-passing carves a dark hole out of the middle
+and keeps the rest. The hybrid's spectrum is the union: the astronaut's centre surrounded by
+the mandrill's outer ring. The bright horizontal and vertical lines through the centre are not
+image content: the FFT treats the image as a tile that repeats, and the jump where the right
+edge meets the left, and the top meets the bottom, shows up along the axes.</p>
+
+<h3>Choosing the cutoffs</h3>
+<figure>
+  <img src="images/p22_astro_mandrill_response.png" alt="filter responses">
+  <figcaption>Gain of the two filters. The dotted lines are the cutoffs:
+  0.031 cycles/pixel (16 cycles across the image) for the low-pass and
+  0.062 (32 cycles) for the high-pass.</figcaption>
+</figure>
+<div class="wide">
+<figure class="row">
+  <div><img src="images/p22_astro_mandrill_sweep_3.jpg" alt="sigma 3"><figcaption>&sigma;<sub>low</sub> = 3: too sharp.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_sweep_6.jpg" alt="sigma 6"><figcaption>&sigma;<sub>low</sub> = 6: chosen.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_sweep_12.jpg" alt="sigma 12"><figcaption>&sigma;<sub>low</sub> = 12: too blurry.</figcaption></div>
+</figure>
+</div>
+<p>At &sigma;<sub>low</sub> = 3 the astronaut keeps the outlines of her teeth and eyelids,
+which compete with the mandrill up close, so the image reads as a face with fur painted on it
+rather than as a mandrill. At 12 she is too blurred to be recognisable even from far away.
+At 6 her features survive as soft shading while everything sharp belongs to the mandrill. For
+the high-pass I went the other way: &sigma;<sub>high</sub> = 3 keeps the fur, the eye rims and
+the grooves along the muzzle, and anything larger starts letting the mandrill's big shapes,
+the pale cheek ridges, into the hybrid, where they fight the astronaut at a distance. Even at
+3 the outlines of the cheek ridges stay faintly visible from a moderate distance: they are
+strong, long edges, and an edge that long has energy reaching down towards the low-pass band,
+where the two filters overlap.</p>
+<div class="wide">
+<figure>
+  <img src="images/p22_astro_mandrill_distance.jpg" alt="astronaut mandrill at several sizes">
+  <figcaption>The favourite at four sizes. Full size is a mandrill; by a quarter size it is the
+  astronaut.</figcaption>
+</figure>
+</div>
+
+<h3>Cat up close, dog from afar</h3>
+<div class="wide">
+<figure class="row">
+  <div><img src="images/p22_dog_cat_in_low.jpg" alt="dog"><figcaption>Dog (low frequencies).</figcaption></div>
+  <div><img src="images/p22_dog_cat_in_high.jpg" alt="cat"><figcaption>Cat (high frequencies).</figcaption></div>
+  <div><img src="images/p22_dog_cat_hybrid.jpg" alt="hybrid"><figcaption>Hybrid.</figcaption></div>
+</figure>
+<figure>
+  <img src="images/p22_dog_cat_distance.jpg" alt="dog cat at several sizes">
+  <figcaption>At several sizes. The dog's open mouth and pale tongue are a large, bright, low
+  frequency shape, so they win quickly as the image shrinks.</figcaption>
+</figure>
+</div>
+
+<h3>Bells and whistles: colour</h3>
+<p>Four versions of the favourite: both components gray, colour only in the low frequencies,
+colour only in the high frequencies, and colour in both.</p>
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p22_astro_mandrill_gray_gray.jpg" alt="gray gray"><figcaption>Both gray.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_color_low.jpg" alt="color low"><figcaption>Colour low only.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_color_high.jpg" alt="color high"><figcaption>Colour high only.</figcaption></div>
+  <div><img src="images/p22_astro_mandrill_color_both.jpg" alt="color both"><figcaption>Both in colour.</figcaption></div>
+</figure>
+</div>
+<p>Colour works best in the <strong>low-frequency</strong> component. Skin tone and the warm
+hair make the astronaut readable from further away, and they do not interfere up close,
+because colour spread smoothly over large areas is exactly the kind of signal the eye treats
+as background. Colour in the high-frequency component helps much less than one might expect
+from a creature as colourful as a mandrill. Its blue cheeks and red nose are large, smooth
+regions, so they are low-frequency content and the high-pass throws them away; what survives
+is thin coloured fringes along edges. Measured as the share of each component's variation
+that is colour rather than brightness, the high-pass mandrill carries 12% and the
+low-pass astronaut 4%. The mandrill's number is larger, but on screen it is those
+fringes, which read as noise up close rather than as the mandrill's colouring. Colour in both
+looks best from a distance and a little muddier up close, so my pick is colour in the low
+frequencies only.</p>
+
+<!-- ============================================================ 2.3 -->
+<div class="mark" id="p23"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>2.3 Gaussian and Laplacian stacks</h2>
+
+<p>A Gaussian pyramid blurs and halves the image again and again. A <em>stack</em> does the
+blurring without the halving, so every level stays full size. The level-to-level blur has to
+grow for the stack to behave like a pyramid: in a pyramid, one pixel at level i covers
+2<sup>i</sup> original pixels, so the effective blur doubles each level. I set level i to a
+total blur of &sigma; = 2&middot;2<sup>i&minus;1</sup> (level 0 is the image itself). Applying
+the same small Gaussian again and again would not do this, because blurs add in variance, so
+n passes of &sigma; only reach &sigma;&radic;n. Each level is therefore made from the previous
+one with just the extra blur needed, &radic;(&sigma;<sub>i</sub><sup>2</sup> &minus;
+&sigma;<sub>i&minus;1</sub><sup>2</sup>). All of this uses my own Gaussian blur; no pyramid
+functions from any library.</p>
+<p>Each Laplacian level is the difference of two neighbouring Gaussian levels,
+L<sub>i</sub> = G<sub>i</sub> &minus; G<sub>i+1</sub>, which is a band of frequencies roughly
+one octave wide. The last level is the blurriest Gaussian itself, so that summing all the
+Laplacian levels telescopes back to the original image; for both the apple and the orange the
+reconstruction error is 1.1&times;10<sup>&minus;16</sup>. I use 5 blurred levels (&sigma; up to 32) for the
+300&times;300 oraple images and 6 (&sigma; up to 64) for the larger images.</p>
+
+<div class="wide">
+<figure class="row6">
+  <div><img src="images/p23_apple_G0.jpg" alt=""><figcaption>G<sub>0</sub></figcaption></div>
+  <div><img src="images/p23_apple_G1.jpg" alt=""><figcaption>G<sub>1</sub>, &sigma; = 2</figcaption></div>
+  <div><img src="images/p23_apple_G2.jpg" alt=""><figcaption>G<sub>2</sub>, 4</figcaption></div>
+  <div><img src="images/p23_apple_G3.jpg" alt=""><figcaption>G<sub>3</sub>, 8</figcaption></div>
+  <div><img src="images/p23_apple_G4.jpg" alt=""><figcaption>G<sub>4</sub>, 16</figcaption></div>
+  <div><img src="images/p23_apple_G5.jpg" alt=""><figcaption>G<sub>5</sub>, 32</figcaption></div>
+  <div><img src="images/p23_apple_L0.jpg" alt=""><figcaption>L<sub>0</sub></figcaption></div>
+  <div><img src="images/p23_apple_L1.jpg" alt=""><figcaption>L<sub>1</sub></figcaption></div>
+  <div><img src="images/p23_apple_L2.jpg" alt=""><figcaption>L<sub>2</sub></figcaption></div>
+  <div><img src="images/p23_apple_L3.jpg" alt=""><figcaption>L<sub>3</sub></figcaption></div>
+  <div><img src="images/p23_apple_L4.jpg" alt=""><figcaption>L<sub>4</sub></figcaption></div>
+  <div><img src="images/p23_apple_L5.jpg" alt=""><figcaption>L<sub>5</sub> = G<sub>5</sub></figcaption></div>
+</figure>
+<figure class="row6">
+  <div><img src="images/p23_orange_G0.jpg" alt=""><figcaption>G<sub>0</sub></figcaption></div>
+  <div><img src="images/p23_orange_G1.jpg" alt=""><figcaption>G<sub>1</sub></figcaption></div>
+  <div><img src="images/p23_orange_G2.jpg" alt=""><figcaption>G<sub>2</sub></figcaption></div>
+  <div><img src="images/p23_orange_G3.jpg" alt=""><figcaption>G<sub>3</sub></figcaption></div>
+  <div><img src="images/p23_orange_G4.jpg" alt=""><figcaption>G<sub>4</sub></figcaption></div>
+  <div><img src="images/p23_orange_G5.jpg" alt=""><figcaption>G<sub>5</sub></figcaption></div>
+  <div><img src="images/p23_orange_L0.jpg" alt=""><figcaption>L<sub>0</sub></figcaption></div>
+  <div><img src="images/p23_orange_L1.jpg" alt=""><figcaption>L<sub>1</sub></figcaption></div>
+  <div><img src="images/p23_orange_L2.jpg" alt=""><figcaption>L<sub>2</sub></figcaption></div>
+  <div><img src="images/p23_orange_L3.jpg" alt=""><figcaption>L<sub>3</sub></figcaption></div>
+  <div><img src="images/p23_orange_L4.jpg" alt=""><figcaption>L<sub>4</sub></figcaption></div>
+  <div><img src="images/p23_orange_L5.jpg" alt=""><figcaption>L<sub>5</sub> = G<sub>5</sub></figcaption></div>
+</figure>
+<p class="note" style="margin-top:0">Gaussian and Laplacian stacks of the apple (top) and
+orange (bottom). The Laplacian bands are signed and shown with mid gray as zero, each stretched
+to its own range so the faint fine bands are visible.</p>
+</div>
+
+<h3>Recreating Szeliski's Figure 3.42</h3>
+<p>The figure shows the blend from the next part taken apart by frequency. Each row is one
+Laplacian level: level 0 (fine detail), 2 (middle) and 4 (coarse). The left column is the
+apple's band weighted by its side of the mask, the middle is the orange's band weighted by the
+other side, and the right is their sum. The bottom row adds up all levels of each column: the
+masked apple, the masked orange and the finished oraple.</p>
+<div class="wide">
+<div class="grid342">
+  <div></div><div class="head">apple &times; (1 &minus; m<sub>i</sub>)</div><div class="head">orange &times; m<sub>i</sub></div><div class="head">sum</div>
+  <div class="lab">level 0<br>(a)&ndash;(c)</div>
+  <img src="images/p23_fig_L0_a.jpg" alt="a"><img src="images/p23_fig_L0_b.jpg" alt="b"><img src="images/p23_fig_L0_c.jpg" alt="c">
+  <div class="lab">level 2<br>(d)&ndash;(f)</div>
+  <img src="images/p23_fig_L2_a.jpg" alt="d"><img src="images/p23_fig_L2_b.jpg" alt="e"><img src="images/p23_fig_L2_c.jpg" alt="f">
+  <div class="lab">level 4<br>(g)&ndash;(i)</div>
+  <img src="images/p23_fig_L4_a.jpg" alt="g"><img src="images/p23_fig_L4_b.jpg" alt="h"><img src="images/p23_fig_L4_c.jpg" alt="i">
+  <div class="lab">all levels<br>(j)&ndash;(l)</div>
+  <img src="images/p23_fig_full_a.jpg" alt="j"><img src="images/p23_fig_full_b.jpg" alt="k"><img src="images/p23_fig_full_c.jpg" alt="l">
+</div>
+</div>
+<p>The rows show the idea behind the whole method. In the fine band the seam between apple
+and orange is a sharp line, because the mask at that level is barely blurred. In the coarse
+band the two halves fade into each other over most of the image width, because the mask at
+that level is heavily blurred. Fine detail is switched over quickly, so the apple's smooth
+skin and the orange's dimpled peel do not get mixed into a ghostly double texture; coarse
+colour is switched over slowly, so there is no visible step from red to orange.</p>
+
+<!-- ============================================================ 2.4 -->
+<div class="mark" id="p24"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>2.4 Multiresolution blending</h2>
+
+<p>Following the lecture's notation, with A and B the two images and m the mask (1 where B
+should show), every Laplacian level is blended separately and the results are added up:</p>
+<p style="text-align:center"><code>l<sub>k</sub> = l<sub>k</sub><sup>A</sup>(1 &minus; m<sub>k</sub>) + l<sub>k</sub><sup>B</sup> m<sub>k</sub></code></p>
+<p>where m<sub>k</sub> is level k of the mask's own Gaussian stack, built with the same blur
+schedule as the images. With pyramids, the downsampling and upsampling would blur an abrupt
+seam on their own; with stacks nothing does, so the mask's Gaussian stack is what provides the
+smooth transition at each level. I also blur the mask by &sigma; = 1 before level 0, so the
+finest band does not switch over within a single pixel. Colour images are blended one
+channel at a time with the same mask.</p>
+
+<h3>The oraple</h3>
+<div class="wide">
+<figure class="row5">
+  <div><img src="images/p24_apple.jpg" alt="apple"><figcaption>Apple (A).</figcaption></div>
+  <div><img src="images/p24_orange.jpg" alt="orange"><figcaption>Orange (B).</figcaption></div>
+  <div><img src="images/p24_oraple_cut.jpg" alt="cut"><figcaption>Hard cut: an obvious seam.</figcaption></div>
+  <div><img src="images/p24_oraple_feather.jpg" alt="feather"><figcaption>One soft mask (&sigma; = 8) for everything: the seam becomes a smeared band where the textures overlap.</figcaption></div>
+  <div><img src="images/p24_oraple.jpg" alt="oraple"><figcaption>Multiresolution blend.</figcaption></div>
+</figure>
+</div>
+<p>The single soft mask shows why one transition width cannot work. Wide enough to hide the
+colour change, it is also wide enough that the apple's smooth skin and the orange's peel
+overlap in a band down the middle, where the texture looks like neither. The multiresolution
+blend changes colour just as gradually but switches texture within a few pixels.</p>
+
+<h3>A straight seam of my own: half astronaut, half mandrill</h3>
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p24_seam_a.jpg" alt="astronaut aligned"><figcaption>A: astronaut, aligned by the eyes as in 2.2.</figcaption></div>
+  <div><img src="images/p24_seam_b.jpg" alt="mandrill"><figcaption>B: mandrill.</figcaption></div>
+  <div><img src="images/p24_seam_cut.jpg" alt="cut"><figcaption>Hard cut.</figcaption></div>
+  <div><img src="images/p24_seam.jpg" alt="seam blend"><figcaption>Blended, vertical mask down the middle.</figcaption></div>
+</figure>
+</div>
+<p>This one is harder than the oraple, because the two halves have little in common: skin
+against fur, and a red muzzle right on the seam. The blend removes the step in brightness and
+colour along most of the line, and the eyes line up because of the alignment. Where the
+astronaut's black collar meets the mandrill's light fur, the contrast is too large for any
+smooth transition to hide completely, and the seam is still visible there.</p>
+
+<h3>An irregular mask: Starry Night over a parking lot</h3>
+<p>The base is a photo of mine: palms, a light pole and a cartoon sign against a clear blue
+sky. The mask is the sky. Sky pixels are clearly bluer than they are red and fairly bright, so
+a colour test finds them, with two clean-up steps. A blue and white parking sign near the
+bottom also passes the colour test, so I keep only candidate pixels in the upper 76% of the
+frame, plus anything connected to the top edge. Patches of sky seen through the palm fronds
+are enclosed by leaves and not connected to the top, which is why the position rule is needed
+rather than connectivity alone. Tiny specks are dropped and pinholes filled. The mask covers
+50% of the photo, and follows individual fronds, which no straight line could.</p>
+<div class="wide">
+<figure class="row4">
+  <div><img src="images/p24_lot.jpg" alt="parking lot"><figcaption>A: my photo.</figcaption></div>
+  <div><img src="images/p24_night.jpg" alt="Starry Night"><figcaption>B: Van Gogh's <em>The Starry Night</em> (1889), cropped to the same 3:4 shape so nothing is stretched.</figcaption></div>
+  <div><img src="images/p24_sky_mask.png" alt="mask"><figcaption>Mask m (white = painting).</figcaption></div>
+  <div><img src="images/p24_starry_cut.jpg" alt="cut"><figcaption>Hard cut with the same mask.</figcaption></div>
+</figure>
+<figure class="narrow" style="max-width:34rem; margin-left:auto; margin-right:auto">
+  <img src="images/p24_starry.jpg" alt="Starry Night blend">
+  <figcaption>The multiresolution blend.</figcaption>
+</figure>
+</div>
+<p>Close up the two are a genuine trade-off, not a clear win. The hard cut keeps every frond
+and the light pole crisp, but its edges are jagged, and wherever the colour test left a mixed
+pixel outside the mask, a pale fringe of the photo's real sky outlines the leaves and the tops
+of the trees. The blend removes those fringes and the jaggedness, because the fine band is
+switched at the frond edges and the coarse bands smooth over the leftovers. The cost is that
+thin foreground objects take on the painting's colour: the light pole and the thinnest fronds
+are only a few pixels wide, far narrower than the blur on the mask at the coarse levels, so
+the painting's deep blue leaks into them and they come out darker and bluer than in the photo.
+Multiresolution blending assumes that each region is wide compared with the transition at every
+level, and a lamp post against the sky breaks that assumption.</p>
+
+<h3>The blend taken apart</h3>
+<p>The same layout as Figure 3.42, for the Starry Night blend: photo band times (1 &minus; m),
+painting band times m, and their sum, at Laplacian levels 0, 2, 4 and 6, then all levels
+added up.</p>
+<div class="wide">
+<div class="grid342" style="max-width:40rem; margin:0 auto">
+  <div></div><div class="head">photo &times; (1 &minus; m<sub>i</sub>)</div><div class="head">painting &times; m<sub>i</sub></div><div class="head">sum</div>
+  <div class="lab">level 0</div>
+  <img src="images/p24_starry_fig_L0_a.jpg" alt=""><img src="images/p24_starry_fig_L0_b.jpg" alt=""><img src="images/p24_starry_fig_L0_c.jpg" alt="">
+  <div class="lab">level 2</div>
+  <img src="images/p24_starry_fig_L2_a.jpg" alt=""><img src="images/p24_starry_fig_L2_b.jpg" alt=""><img src="images/p24_starry_fig_L2_c.jpg" alt="">
+  <div class="lab">level 4</div>
+  <img src="images/p24_starry_fig_L4_a.jpg" alt=""><img src="images/p24_starry_fig_L4_b.jpg" alt=""><img src="images/p24_starry_fig_L4_c.jpg" alt="">
+  <div class="lab">level 6 (residual)</div>
+  <img src="images/p24_starry_fig_L6_a.jpg" alt=""><img src="images/p24_starry_fig_L6_b.jpg" alt=""><img src="images/p24_starry_fig_L6_c.jpg" alt="">
+  <div class="lab">all levels</div>
+  <img src="images/p24_starry_fig_full_a.jpg" alt=""><img src="images/p24_starry_fig_full_b.jpg" alt=""><img src="images/p24_starry_fig_full_c.jpg" alt="">
+</div>
+</div>
+<p>At level 0 the mask still follows every frond, and the two images' fine detail is cut
+cleanly along the leaf edges. By level 6, the low-frequency residual, the mask is so blurred
+that the two images' overall colour is mixed across a large part of the frame, which is what
+lets the painting's deep blue and the photo's lighter sky meet without a visible line.</p>
+
+<h3>Bells and whistles: colour</h3>
+<figure class="pair narrow" style="max-width:30rem">
+  <div><img src="images/p24_starry_gray.jpg" alt="gray blend"><figcaption>Blended in grayscale.</figcaption></div>
+  <div><img src="images/p24_starry.jpg" alt="colour blend"><figcaption>Blended in colour.</figcaption></div>
+</figure>
+<p>All of the blends above are already in colour, blending the three channels separately with
+one shared mask stack. The grayscale version shows what colour contributes. In gray the blend is plausible but
+flat; the
+effect depends on the painting's yellows and cobalt blues against the photo's real colours.
+Because the coarsest levels carry the
+colour and have the widest mask, the multiresolution blend is precisely the right tool for
+hiding colour differences, and blending in colour costs nothing extra beyond running each
+channel through the same stacks.</p>
+
+<!-- ============================================================ learned -->
+<div class="mark" id="learned"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>What I learned</h2>
+<p>The most important thing I learned is that "how big is this detail" is a better question
+than "what is this detail" for a surprising amount of image processing. Edge detection,
+sharpening, hybrids and blending all turned out to be the same move: split the image into
+frequency bands, then treat each band differently. The hybrid images made it concrete for me.
+The same pixels read as two different pictures depending only on which band the viewer can
+resolve. The blends taught me the limit of the same idea: giving each band a seam as wide as
+its own features works beautifully until an object in the picture is narrower than the widest
+seam, like the light pole in my Starry Night blend.</p>
+
+<p class="note">Image sources. Course images: cameraman, Taj Mahal, Derek and Nutmeg, apple and
+orange. Astronaut (Eileen Collins, NASA, public domain) and the cat (Chelsea) from the
+scikit-image sample data; mandrill, dog and <em>The Starry Night</em> from the OpenCV sample
+data. The portrait and the parking lot are my own photos.</p>
+</div>
+</body>
+</html>
