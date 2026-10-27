@@ -1,0 +1,111 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CS180 Project 4: [Auto]Stitching Photo Mosaics</title><style>
+body{font-family:Georgia,'Times New Roman',serif;max-width:1000px;margin:2em auto;padding:0 16px;color:#222;line-height:1.55}
+h1{font-size:2em;margin-bottom:.2em} h2{border-bottom:1px solid #ccc;padding-bottom:.2em;margin-top:2em}
+h3{margin-top:1.6em} img{max-width:100%;display:block;margin:.6em auto}
+figure{margin:1.2em 0} figcaption{font-size:.9em;color:#555;text-align:center}
+pre{background:#f6f6f6;padding:.7em;overflow-x:auto;font-size:.82em;line-height:1.35}
+table{border-collapse:collapse;margin:.8em auto;font-size:.92em} td,th{border:1px solid #ccc;padding:.3em .6em;text-align:right}
+th{background:#f0f0f0} .note{color:#555;font-size:.92em} .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+@media print{h2{page-break-before:auto} figure{page-break-inside:avoid}}
+</style></head><body>
+<h1>[Auto]Stitching Photo Mosaics</h1><p>CS180 Project 4 &middot; Kangxiang Chen</p>
+<p>Part A stitches photos using correspondences I clicked by hand: recover the homography between each pair of photos, inverse-warp them onto a common image plane and blend.</p>
+<h2>Part A</h2><h3>A.1 Shooting the pictures</h3>
+<p>I stood in one spot and rotated the phone between shots, with roughly half of each photo overlapping the next. Rotating about the centre of projection is what makes the relation between photos a pure homography regardless of scene depth; moving the camera instead introduces parallax, which no single homography can undo. Photos are downsized so the longer side is 1200 px before processing.</p>
+<figure><img src="media/mos_courtyard_src.jpg" loading="lazy"><figcaption>Set <b>courtyard</b>: 3 source photos. The foreground railing and chair show slight ghosting: they are only about a metre from the camera, so the small movement of the phone between shots causes parallax that a single homography cannot remove.</figcaption></figure>
+<figure><img src="media/mos_hall_src.jpg" loading="lazy"><figcaption>Set <b>hall</b>: 3 source photos. A small step remains in the ceiling beams at the right seam: the phone moved slightly between photos 2 and 3, and since the ceiling is much closer than the far wall, no single homography aligns both (parallax).</figcaption></figure>
+<figure><img src="media/mos_street_src.jpg" loading="lazy"><figcaption>Set <b>street</b>: 3 source photos.</figcaption></figure>
+<h3>A.2 Recovering homographies</h3>
+<p>A homography maps a point p = (x, y, 1) to p' ~ Hp, with</p><pre>x' = (a x + b y + c) / (g x + h y + 1)
+y' = (d x + e y + f) / (g x + h y + 1)</pre><p>where the bottom-right entry is fixed to 1, leaving 8 unknowns. Multiplying out the denominator makes each equation linear in the unknowns, so every correspondence gives two rows:</p><pre>[ x  y  1  0  0  0  -x x'  -y x' ] h = x'
+[ 0  0  0  x  y  1  -x y'  -y y' ] h = y'</pre><p>Stacking n correspondences gives a 2n by 8 system Ah = b. Four points determine H exactly, but click errors of a pixel or two then go straight into H, so I click more points and solve the overdetermined system by least squares, minimising ||Ah - b||<sup>2</sup>. Before solving, both point sets are normalised (centroid to the origin, mean distance sqrt(2)) and H is un-normalised afterwards. This gives the same answer in exact arithmetic but keeps A well conditioned, since raw pixel coordinates put entries of size 1 next to entries of size 10<sup>6</sup> (the x x' terms). <code>computeH(im1_pts, im2_pts)</code> returns H mapping image-1 points into image 2.</p>
+<h4>Set courtyard</h4>
+<figure><img src="media/mos_courtyard_pts_0_1.jpg" loading="lazy"><figcaption>courtyard: photo 0 &harr; photo 1, 12 correspondences</figcaption></figure>
+<figure><img src="media/mos_courtyard_pts_1_2.jpg" loading="lazy"><figcaption>courtyard: photo 1 &harr; photo 2, 15 correspondences</figcaption></figure>
+<p>System for photo 0 &rarr; photo 1 (first rows; columns are the 8 unknowns, last column the right-hand side, in pixel coordinates before normalisation):</p><pre>      a          b        c        d          e        f          g             h        |      rhs
+   633.669     96.995      1.000      0.000      0.000      0.000 -2.397e+05 -36689.516  |    378.262
+     0.000      0.000      0.000    633.669     96.995      1.000 -59403.394  -9092.798  |     93.745
+   563.798    299.297      1.000      0.000      0.000      0.000 -1.697e+05 -90111.933  |    301.079
+     0.000      0.000      0.000    563.798    299.297      1.000 -1.614e+05 -85687.969  |    286.298
+   433.805    305.797      1.000      0.000      0.000      0.000 -71045.688 -50081.342  |    163.773
+     0.000      0.000      0.000    433.805    305.797      1.000 -1.179e+05 -83076.764  |    271.673
+   776.662    291.985      1.000      0.000      0.000      0.000 -3.916e+05 -1.472e+05  |    504.193
+     0.000      0.000      0.000    776.662    291.985      1.000 -2.362e+05 -88813.483  |    304.172
+  ... (16 more rows, 2 per correspondence)</pre>
+<p>Recovered H, photo 0 &rarr; photo 1 (least-squares residual: RMS 2.87 px, max 3.99 px over 12 points):</p><pre> 1.5343  -9.2915e-03  -455.8595
+ 0.3600   1.3811  -235.5662
+ 5.6943e-04   4.5275e-05   1.0000</pre>
+<p>Recovered H, photo 1 &rarr; photo 2 (least-squares residual: RMS 2.23 px, max 3.76 px over 15 points):</p><pre> 1.3239   8.5936e-03  -304.4317
+ 0.1997   1.2029  -122.8382
+ 3.4521e-04   1.4800e-05   1.0000</pre>
+<h4>Set hall</h4>
+<figure><img src="media/mos_hall_pts_0_1.jpg" loading="lazy"><figcaption>hall: photo 0 &harr; photo 1, 18 correspondences</figcaption></figure>
+<figure><img src="media/mos_hall_pts_1_2.jpg" loading="lazy"><figcaption>hall: photo 1 &harr; photo 2, 16 correspondences</figcaption></figure>
+<p>System for photo 0 &rarr; photo 1 (first rows; columns are the 8 unknowns, last column the right-hand side, in pixel coordinates before normalisation):</p><pre>      a          b        c        d          e        f          g             h        |      rhs
+   392.369    374.043      1.000      0.000      0.000      0.000 -63303.330 -60346.612  |    161.336
+     0.000      0.000      0.000    392.369    374.043      1.000 -1.417e+05 -1.350e+05  |    361.044
+   604.421    441.477      1.000      0.000      0.000      0.000 -2.321e+05 -1.695e+05  |    383.949
+     0.000      0.000      0.000    604.421    441.477      1.000 -2.703e+05 -1.974e+05  |    447.164
+   748.226    423.603      1.000      0.000      0.000      0.000 -3.852e+05 -2.181e+05  |    514.755
+     0.000      0.000      0.000    748.226    423.603      1.000 -3.261e+05 -1.846e+05  |    435.790
+   870.095    426.040      1.000      0.000      0.000      0.000 -5.384e+05 -2.636e+05  |    618.750
+     0.000      0.000      0.000    870.095    426.040      1.000 -3.862e+05 -1.891e+05  |    443.914
+  ... (28 more rows, 2 per correspondence)</pre>
+<p>Recovered H, photo 0 &rarr; photo 1 (least-squares residual: RMS 2.21 px, max 3.36 px over 18 points):</p><pre> 1.3708   0.0148  -358.2695
+ 0.2405   1.2311  -132.5994
+ 4.1450e-04  -3.0114e-06   1.0000</pre>
+<p>Recovered H, photo 1 &rarr; photo 2 (least-squares residual: RMS 2.09 px, max 3.12 px over 16 points):</p><pre> 1.4810   0.0547  -438.0480
+ 0.2658   1.3427  -202.0644
+ 4.9009e-04   4.8527e-05   1.0000</pre>
+<h4>Set street</h4>
+<figure><img src="media/mos_street_pts_0_1.jpg" loading="lazy"><figcaption>street: photo 0 &harr; photo 1, 12 correspondences</figcaption></figure>
+<figure><img src="media/mos_street_pts_1_2.jpg" loading="lazy"><figcaption>street: photo 1 &harr; photo 2, 13 correspondences</figcaption></figure>
+<p>System for photo 0 &rarr; photo 1 (first rows; columns are the 8 unknowns, last column the right-hand side, in pixel coordinates before normalisation):</p><pre>      a          b        c        d          e        f          g             h        |      rhs
+   685.667    470.725      1.000      0.000      0.000      0.000 -3.117e+05 -2.140e+05  |    454.633
+     0.000      0.000      0.000    685.667    470.725      1.000 -3.211e+05 -2.204e+05  |    468.288
+   724.665    511.348      1.000      0.000      0.000      0.000 -3.530e+05 -2.491e+05  |    487.132
+     0.000      0.000      0.000    724.665    511.348      1.000 -3.700e+05 -2.611e+05  |    510.536
+   833.534    480.475      1.000      0.000      0.000      0.000 -4.846e+05 -2.793e+05  |    581.377
+     0.000      0.000      0.000    833.534    480.475      1.000 -4.059e+05 -2.340e+05  |    486.975
+   831.097    563.346      1.000      0.000      0.000      0.000 -4.818e+05 -3.266e+05  |    579.752
+     0.000      0.000      0.000    831.097    563.346      1.000 -4.675e+05 -3.169e+05  |    562.533
+  ... (16 more rows, 2 per correspondence)</pre>
+<p>Recovered H, photo 0 &rarr; photo 1 (least-squares residual: RMS 1.60 px, max 2.13 px over 12 points):</p><pre> 1.3782  -0.0331  -337.2655
+ 0.2829   1.2393  -165.8022
+ 4.4113e-04  -2.6157e-06   1.0000</pre>
+<p>Recovered H, photo 1 &rarr; photo 2 (least-squares residual: RMS 1.89 px, max 3.86 px over 13 points):</p><pre> 1.6216  -1.7733e-03  -473.3402
+ 0.4049   1.4359  -237.3640
+ 6.4751e-04   5.0173e-05   1.0000</pre>
+<h3>A.3 Warping and rectification</h3>
+<p>Warping uses inverse mapping. I push the four corners of the input through H to get the output bounding box, then for every output pixel compute H<sup>-1</sup> of its location to find where it came from in the input, and read the input there. Looping over output pixels guarantees every one gets a value, so there are no holes. Pixel centres are at integer coordinates; an output pixel whose source lands outside the input gets alpha 0, and this alpha mask is reused for blending.</p><p><b>Nearest neighbour</b> rounds the source location to the closest pixel centre. <b>Bilinear</b> takes the four surrounding pixels and weights them by (1-f<sub>x</sub>)(1-f<sub>y</sub>), f<sub>x</sub>(1-f<sub>y</sub>), (1-f<sub>x</sub>)f<sub>y</sub> and f<sub>x</sub>f<sub>y</sub>, where f<sub>x</sub>, f<sub>y</sub> are the fractional offsets. Both are implemented from scratch and vectorised with NumPy.</p><p>To test the pipeline I rectified photos of rectangular objects: click the object's four corners and map them to a rectangle with the object's true aspect ratio. Only a margin around the object is shown, because points near the vanishing line map towards infinity.</p>
+<figure><img src="media/rect_painting_src.jpg" loading="lazy"><figcaption><b>painting</b>, clicked corners (true aspect ratio 1.250).</figcaption></figure>
+<div class='grid2'><figure><img src="media/rect_painting_nn.jpg" loading="lazy"><figcaption>nearest neighbour (0.06 s)</figcaption></figure><figure><img src="media/rect_painting_bil.jpg" loading="lazy"><figcaption>bilinear (0.13 s)</figcaption></figure></div>
+<figure><img src="media/rect_painting_zoom.jpg" loading="lazy"><figcaption>Zoomed crop (pixels replicated, no smoothing)</figcaption></figure>
+<figure><img src="media/rect_tv_src.jpg" loading="lazy"><figcaption><b>tv</b>, clicked corners (true aspect ratio 1.778).</figcaption></figure>
+<div class='grid2'><figure><img src="media/rect_tv_nn.jpg" loading="lazy"><figcaption>nearest neighbour (0.06 s)</figcaption></figure><figure><img src="media/rect_tv_bil.jpg" loading="lazy"><figcaption>bilinear (0.11 s)</figcaption></figure></div>
+<figure><img src="media/rect_tv_zoom.jpg" loading="lazy"><figcaption>Zoomed crop (pixels replicated, no smoothing)</figcaption></figure>
+<p><b>Speed vs quality.</b> Averaged over my rectifications, nearest neighbour took 0.06 s and bilinear 0.12 s (2.0x slower): bilinear reads four pixels and does several multiply-adds per output pixel where nearest neighbour reads one. In the zoomed crops, nearest neighbour shows jagged, stair-stepped edges, because neighbouring output pixels jump between whole input pixels. Where the warp stretches the image, each source pixel is copied into blocks. Bilinear produces smooth edges and gradients, at the cost of slight blurring. For a final mosaic the extra time is negligible compared to the quality gain, so I use bilinear everywhere else.</p>
+<h3>A.4 Blending into a mosaic</h3>
+<p>For each set I keep the middle photo unwarped as the reference and warp the others into its image plane. Homographies are computed between neighbouring photos and chained: for example H<sub>0&rarr;2</sub> = H<sub>1&rarr;2</sub>H<sub>0&rarr;1</sub>, and the photo on the right of the reference uses the inverse of its pairwise H. I take the union of all warped bounding boxes as the canvas and warp every photo into it in one shot.</p><p>Each photo gets a weight map equal to its distance to its own nearest border (1 at the centre, falling linearly to 0 at the edges), warped along with the colours. Pasting photos on top of each other (<i>overwrite</i>) leaves hard seams. Plain <i>feathering</i>, the weighted average &Sigma;w<sub>i</sub>I<sub>i</sub>/&Sigma;w<sub>i</sub>, hides the seams but ghosts any fine detail that is misaligned by a pixel or more. My final result uses <i>two-band blending</i> (Brown and Lowe): each photo is split into a low band (Gaussian blur, &sigma; = 2.0 px, computed only from valid pixels so the black canvas doesn't bleed in) and a high band (photo minus low band). The low band is feathered so exposure differences fade smoothly; the high band at each pixel is taken from the single photo with the largest weight, so detail is never averaged and cannot ghost.</p>
+<h4>Set courtyard</h4>
+<figure><img src="media/mos_courtyard_src.jpg" loading="lazy"><figcaption>Source photos</figcaption></figure>
+<figure><img src="media/mos_courtyard_twoband.jpg" loading="lazy"><figcaption><b>Final mosaic (two-band blending)</b>, 1651x1585 px, reference = photo 1. The foreground railing and chair show slight ghosting: they are only about a metre from the camera, so the small movement of the phone between shots causes parallax that a single homography cannot remove.</figcaption></figure>
+<figure><img src="media/mos_courtyard_zoom.jpg" loading="lazy"><figcaption>Close-up of an overlap region: overwrite vs feathering vs two-band</figcaption></figure>
+<div class='grid2'><figure><img src="media/mos_courtyard_overwrite.jpg" loading="lazy"><figcaption>overwrite (no blending)</figcaption></figure><figure><img src="media/mos_courtyard_feather.jpg" loading="lazy"><figcaption>feathering</figcaption></figure></div>
+<h4>Set hall</h4>
+<figure><img src="media/mos_hall_src.jpg" loading="lazy"><figcaption>Source photos</figcaption></figure>
+<figure><img src="media/mos_hall_twoband.jpg" loading="lazy"><figcaption><b>Final mosaic (two-band blending)</b>, 1647x1543 px, reference = photo 1. A small step remains in the ceiling beams at the right seam: the phone moved slightly between photos 2 and 3, and since the ceiling is much closer than the far wall, no single homography aligns both (parallax).</figcaption></figure>
+<figure><img src="media/mos_hall_zoom.jpg" loading="lazy"><figcaption>Close-up of an overlap region: overwrite vs feathering vs two-band</figcaption></figure>
+<div class='grid2'><figure><img src="media/mos_hall_overwrite.jpg" loading="lazy"><figcaption>overwrite (no blending)</figcaption></figure><figure><img src="media/mos_hall_feather.jpg" loading="lazy"><figcaption>feathering</figcaption></figure></div>
+<h4>Set street</h4>
+<figure><img src="media/mos_street_src.jpg" loading="lazy"><figcaption>Source photos</figcaption></figure>
+<figure><img src="media/mos_street_twoband.jpg" loading="lazy"><figcaption><b>Final mosaic (two-band blending)</b>, 1765x1624 px, reference = photo 1.</figcaption></figure>
+<figure><img src="media/mos_street_zoom.jpg" loading="lazy"><figcaption>Close-up of an overlap region: overwrite vs feathering vs two-band</figcaption></figure>
+<div class='grid2'><figure><img src="media/mos_street_overwrite.jpg" loading="lazy"><figcaption>overwrite (no blending)</figcaption></figure><figure><img src="media/mos_street_feather.jpg" loading="lazy"><figcaption>feathering</figcaption></figure></div>
+<h3>A.5 Bells and whistles: cylindrical projection</h3>
+<p>A planar mosaic stretches badly towards the sides as the field of view grows, since the plane is tangent at the reference view and the stretch grows with tan(&theta;). I instead project onto a cylinder of radius f around the camera, and do the inverse sampling directly from the original photos so nothing is resampled twice. For output pixel (u, v), &theta; = u/f and height = v/f give the ray (sin &theta;, height, cos &theta;); that ray hits the reference image plane at (f tan &theta; + c<sub>x</sub>, f&middot;height/cos &theta; + c<sub>y</sub>), which H<sub>i</sub><sup>-1</sup> maps into photo i, where I sample bilinearly. Blending is the same two-band scheme. I set f = 0.95 &times; image width, chosen by eye; this is close to a typical phone main camera, whose horizontal field of view is roughly 65 to 70 degrees. A pure pan becomes a pure horizontal shift on the cylinder, so vertical lines stay vertical and the sides are no longer stretched.</p>
+<div class='grid2'><figure><img src="media/mos_courtyard_twoband.jpg" loading="lazy"><figcaption>courtyard: planar</figcaption></figure><figure><img src="media/mos_courtyard_cyl.jpg" loading="lazy"><figcaption>courtyard: cylindrical, f = 855 px</figcaption></figure></div>
+<div class='grid2'><figure><img src="media/mos_hall_twoband.jpg" loading="lazy"><figcaption>hall: planar</figcaption></figure><figure><img src="media/mos_hall_cyl.jpg" loading="lazy"><figcaption>hall: cylindrical, f = 855 px</figcaption></figure></div>
+<div class='grid2'><figure><img src="media/mos_street_twoband.jpg" loading="lazy"><figcaption>street: planar</figcaption></figure><figure><img src="media/mos_street_cyl.jpg" loading="lazy"><figcaption>street: cylindrical, f = 855 px</figcaption></figure></div>
+</body></html>
