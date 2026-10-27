@@ -237,12 +237,12 @@ y' = (d x + e y + f) / (g x + h y + 1)</code></pre><p>Multiplying out the denomi
 </figure>
 <div class="pair wide">
 <figure>
-  <img src="media/rect_painting_nn.jpg" alt="Nearest neighbour, 0.07 s." loading="lazy">
-  <figcaption>Nearest neighbour, 0.07 s.</figcaption>
+  <img src="media/rect_painting_nn.jpg" alt="Nearest neighbour, 0.06 s." loading="lazy">
+  <figcaption>Nearest neighbour, 0.06 s.</figcaption>
 </figure>
 <figure>
-  <img src="media/rect_painting_bil.jpg" alt="Bilinear, 0.17 s." loading="lazy">
-  <figcaption>Bilinear, 0.17 s.</figcaption>
+  <img src="media/rect_painting_bil.jpg" alt="Bilinear, 0.20 s." loading="lazy">
+  <figcaption>Bilinear, 0.20 s.</figcaption>
 </figure>
 </div>
 <figure>
@@ -260,15 +260,15 @@ y' = (d x + e y + f) / (g x + h y + 1)</code></pre><p>Multiplying out the denomi
   <figcaption>Nearest neighbour, 0.04 s.</figcaption>
 </figure>
 <figure>
-  <img src="media/rect_tv_bil.jpg" alt="Bilinear, 0.11 s." loading="lazy">
-  <figcaption>Bilinear, 0.11 s.</figcaption>
+  <img src="media/rect_tv_bil.jpg" alt="Bilinear, 0.14 s." loading="lazy">
+  <figcaption>Bilinear, 0.14 s.</figcaption>
 </figure>
 </div>
 <figure>
   <img src="media/rect_tv_zoom.jpg" alt="Zoomed crop, pixels replicated with no smoothing: nearest neighbour (left) and bilinear (right)." loading="lazy">
   <figcaption>Zoomed crop, pixels replicated with no smoothing: nearest neighbour (left) and bilinear (right).</figcaption>
 </figure>
-<p>Averaged over my rectifications, nearest neighbour took 0.05 s and bilinear 0.14 s, about 2.6&times; slower: bilinear reads four pixels and does several multiply-adds per output pixel where nearest neighbour reads one. In the zoomed crops, nearest neighbour shows jagged, stair-stepped edges, because neighbouring output pixels jump between whole input pixels, and where the warp stretches the image each source pixel is copied into a block. Bilinear gives smooth edges and gradients at the cost of slight blurring. For a final mosaic the extra time is negligible next to the quality gain, so I use bilinear everywhere else.</p>
+<p>Averaged over my rectifications, nearest neighbour took 0.05 s and bilinear 0.17 s, about 3.4&times; slower: bilinear reads four pixels and does several multiply-adds per output pixel where nearest neighbour reads one. In the zoomed crops, nearest neighbour shows jagged, stair-stepped edges, because neighbouring output pixels jump between whole input pixels, and where the warp stretches the image each source pixel is copied into a block. Bilinear gives smooth edges and gradients at the cost of slight blurring. For a final mosaic the extra time is negligible next to the quality gain, so I use bilinear everywhere else.</p>
 <div class="mark" id="a4"><span class="b"></span><span class="g"></span><span class="r"></span></div>
 <h2>A.4 Blending into a mosaic</h2>
 <p>For each set I keep the middle photo unwarped as the reference and warp the others into its image plane. Homographies are computed between neighbouring photos and chained, for example H<sub>0&rarr;2</sub> = H<sub>1&rarr;2</sub>H<sub>0&rarr;1</sub>, and a photo to the right of the reference uses the inverse of its pairwise H. The canvas is the union of all warped bounding boxes, and every photo is warped into it in one pass.</p><p>Each photo gets a weight map equal to its distance to its own nearest border (1 at the centre, falling linearly to 0 at the edges), warped along with the colours. Pasting photos on top of each other (<em>overwrite</em>) leaves hard seams. Plain <em>feathering</em>, the weighted average &Sigma;w<sub>i</sub>I<sub>i</sub> / &Sigma;w<sub>i</sub>, hides the seams but ghosts any fine detail that is misaligned by a pixel or more. My final results use <em>two-band blending</em> (Brown and Lowe): each photo is split into a low band (Gaussian blur, &sigma; = 2.0 px, computed only from valid pixels so the empty canvas doesn't bleed in) and a high band (photo minus low band). The low band is feathered, so exposure differences fade smoothly. The high band at each pixel comes from the single photo with the largest weight, so fine detail is never averaged and cannot ghost.</p>
