@@ -119,14 +119,20 @@ figure.narrow { margin-left: auto; margin-right: auto; }
 <div class="col">
 <h1>[Auto]Stitching Photo Mosaics</h1>
 <p class="byline"><span>Chen Kangxiang</span><span>CS180, Project 4</span>
-<span>2026-10-26</span></p>
-<p class="lede">When a camera only rotates, every photo it takes sees the same rays of light, just cut by a differently tilted image plane. Any two such photos are therefore related by a homography, a 3&times;3 projective transform, whatever the depth of the scene. In Part A I recover those homographies from points I clicked by hand, warp photos onto a common plane with my own inverse-mapping code, and blend them into mosaics.</p>
+<span>2026-10-28</span></p>
+<p class="lede">When a camera only rotates, every photo it takes sees the same rays of light, just cut by a differently tilted image plane. Any two such photos are therefore related by a homography, a 3&times;3 projective transform, whatever the depth of the scene. In Part A I recover those homographies from points I clicked by hand, warp photos onto a common plane with my own inverse-mapping code, and blend them into mosaics. In Part B the clicking is replaced by Harris corners, descriptor matching and RANSAC, following Brown, Szeliski and Winder (2005).</p>
 <p class="toc"><strong>Part A</strong><br>
 <a href="#a1">A.1 Shooting the pictures</a> &middot;
 <a href="#a2">A.2 Recovering homographies</a> &middot;
 <a href="#a3">A.3 Warping and rectification</a><br>
 <a href="#a4">A.4 Blending into a mosaic</a> &middot;
-<a href="#a5">A.5 Cylindrical projection</a></p>
+<a href="#a5">A.5 Cylindrical projection</a><br>
+<strong>Part B</strong><br>
+<a href="#b1">B.1 Harris corners and ANMS</a> &middot;
+<a href="#b2">B.2 Descriptors</a> &middot;
+<a href="#b3">B.3 Matching</a><br>
+<a href="#b4">B.4 RANSAC and automatic mosaics</a> &middot;
+<a href="#b5">B.5 Rotation invariance</a></p>
 <p>Conventions used throughout: a point is <code>(x, y)</code> = (column, row) with pixel centres at integer coordinates, and <code>computeH(p1, p2)</code> returns the H with <code>p2 ~ H p1</code>, i.e. it maps image-1 coordinates into image 2. Photos are downsized so the longer side is 1800 px before any processing.</p>
 
 <!-- ================================================================ PART A -->
@@ -237,12 +243,12 @@ y' = (d x + e y + f) / (g x + h y + 1)</code></pre><p>Multiplying out the denomi
 </figure>
 <div class="pair wide">
 <figure>
-  <img src="media/rect_painting_nn.jpg" alt="Nearest neighbour, 0.09 s." loading="lazy">
-  <figcaption>Nearest neighbour, 0.09 s.</figcaption>
+  <img src="media/rect_painting_nn.jpg" alt="Nearest neighbour, 0.07 s." loading="lazy">
+  <figcaption>Nearest neighbour, 0.07 s.</figcaption>
 </figure>
 <figure>
-  <img src="media/rect_painting_bil.jpg" alt="Bilinear, 0.17 s." loading="lazy">
-  <figcaption>Bilinear, 0.17 s.</figcaption>
+  <img src="media/rect_painting_bil.jpg" alt="Bilinear, 0.15 s." loading="lazy">
+  <figcaption>Bilinear, 0.15 s.</figcaption>
 </figure>
 </div>
 <figure>
@@ -260,15 +266,15 @@ y' = (d x + e y + f) / (g x + h y + 1)</code></pre><p>Multiplying out the denomi
   <figcaption>Nearest neighbour, 0.08 s.</figcaption>
 </figure>
 <figure>
-  <img src="media/rect_tv_bil.jpg" alt="Bilinear, 0.25 s." loading="lazy">
-  <figcaption>Bilinear, 0.25 s.</figcaption>
+  <img src="media/rect_tv_bil.jpg" alt="Bilinear, 0.26 s." loading="lazy">
+  <figcaption>Bilinear, 0.26 s.</figcaption>
 </figure>
 </div>
 <figure>
   <img src="media/rect_tv_zoom.jpg" alt="Zoomed crop, pixels replicated with no smoothing: nearest neighbour (left) and bilinear (right)." loading="lazy">
   <figcaption>Zoomed crop, pixels replicated with no smoothing: nearest neighbour (left) and bilinear (right).</figcaption>
 </figure>
-<p>Averaged over my rectifications, nearest neighbour took 0.08 s and bilinear 0.21 s, about 2.5&times; slower: bilinear reads four pixels and does several multiply-adds per output pixel where nearest neighbour reads one. In the zoomed crops, nearest neighbour shows jagged, stair-stepped edges, because neighbouring output pixels jump between whole input pixels, and where the warp stretches the image each source pixel is copied into a block. Bilinear gives smooth edges and gradients at the cost of slight blurring. For a final mosaic the extra time is negligible next to the quality gain, so I use bilinear everywhere else.</p>
+<p>Averaged over my rectifications, nearest neighbour took 0.07 s and bilinear 0.21 s, about 2.8&times; slower: bilinear reads four pixels and does several multiply-adds per output pixel where nearest neighbour reads one. In the zoomed crops, nearest neighbour shows jagged, stair-stepped edges, because neighbouring output pixels jump between whole input pixels, and where the warp stretches the image each source pixel is copied into a block. Bilinear gives smooth edges and gradients at the cost of slight blurring. For a final mosaic the extra time is negligible next to the quality gain, so I use bilinear everywhere else.</p>
 <div class="mark" id="a4"><span class="b"></span><span class="g"></span><span class="r"></span></div>
 <h2>A.4 Blending into a mosaic</h2>
 <p>For each set I keep the middle photo unwarped as the reference and warp the others into its image plane. Homographies are computed between neighbouring photos and chained, for example H<sub>0&rarr;2</sub> = H<sub>1&rarr;2</sub>H<sub>0&rarr;1</sub>, and a photo to the right of the reference uses the inverse of its pairwise H. The canvas is the union of all warped bounding boxes, and every photo is warped into it in one pass.</p><p>Each photo gets a weight map equal to its distance to its own nearest border (1 at the centre, falling linearly to 0 at the edges), warped along with the colours. Pasting photos on top of each other (<em>overwrite</em>) leaves hard seams. Plain <em>feathering</em>, the weighted average &Sigma;w<sub>i</sub>I<sub>i</sub> / &Sigma;w<sub>i</sub>, hides the seams but ghosts any fine detail that is misaligned by a pixel or more. My final results use <em>two-band blending</em> (Brown and Lowe): each photo is split into a low band (Gaussian blur, &sigma; = 2.0 px, computed only from valid pixels so the empty canvas doesn't bleed in) and a high band (photo minus low band). The low band is feathered, so exposure differences fade smoothly. The high band at each pixel comes from the single photo with the largest weight, so fine detail is never averaged and cannot ghost.</p>
@@ -365,7 +371,131 @@ y' = (d x + e y + f) / (g x + h y + 1)</code></pre><p>Multiplying out the denomi
   <figcaption>Cylindrical, f = 1282 px.</figcaption>
 </figure>
 </div>
-<p class="note">All photos are my own.</p>
+
+<!-- ================================================================ PART B -->
+<div class="mark" id="partB"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2 style="font-size:1.8rem">Part B: Automatic stitching</h2>
+<div class="mark" id="b1"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>B.1 Harris corners and ANMS</h2>
+<p>Harris corners use the corner strength det(M)/trace(M) of the second moment matrix M (Gaussian &sigma; = 1), keeping 3&times;3 local maxima and discarding corners within 20 px of the border so a full descriptor window fits. This returns tens of thousands of corners, crowded onto high-contrast texture. Adaptive Non-Maximal Suppression (ANMS) gives each corner the radius r<sub>i</sub> = min<sub>j</sub> ||x<sub>i</sub> &minus; x<sub>j</sub>|| over corners j with f(x<sub>i</sub>) &lt; 0.9 f(x<sub>j</sub>), the distance to the nearest clearly stronger corner, and keeps the 500 with the largest radius. A weak corner survives only if nothing much stronger is nearby, so the kept points are strong and spread evenly, which matters because a homography fitted to points in one corner of the overlap extrapolates poorly.</p>
+<figure class="wide">
+  <img src="media/b1_harris_anms.jpg" alt="Courtyard, photo 0: all Harris corners and the corners kept by ANMS." loading="lazy">
+  <figcaption>Courtyard, photo 0: all Harris corners and the corners kept by ANMS.</figcaption>
+</figure>
+<figure class="wide">
+  <img src="media/b1_harris_zoom.jpg" alt="Close-up of the same photo. Raw Harris fires on every bit of texture; ANMS keeps a few strong, well-separated corners." loading="lazy">
+  <figcaption>Close-up of the same photo. Raw Harris fires on every bit of texture; ANMS keeps a few strong, well-separated corners.</figcaption>
+</figure>
+<figure class="narrow">
+  <img src="media/b1_response.jpg" alt="Harris corner response." loading="lazy">
+  <figcaption>Harris corner response.</figcaption>
+</figure>
+<div class="mark" id="b2"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>B.2 Feature descriptors</h2>
+<p>Around each corner I take a 40&times;40 window, blur it (Gaussian &sigma; = 2) and sample an 8&times;8 grid with 5 px spacing, centred exactly on the corner. Sampling sparsely from a blurred large window makes the descriptor insensitive to the small position errors of the corner detector. Each descriptor is then bias/gain normalised to zero mean and unit standard deviation, so brightness or contrast differences between photos do not matter.</p>
+<figure class="wide">
+  <img src="media/b2_descriptors.jpg" alt="Top: 40&amp;times;40 windows. Bottom: the normalised 8&amp;times;8 descriptors." loading="lazy">
+  <figcaption>Top: 40&times;40 windows. Bottom: the normalised 8&times;8 descriptors.</figcaption>
+</figure>
+<figure class="narrow">
+  <img src="media/b2_desc_locations.jpg" alt="Where those windows are." loading="lazy">
+  <figcaption>Where those windows are.</figcaption>
+</figure>
+<div class="mark" id="b3"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>B.3 Feature matching</h2>
+<p>For each descriptor in photo 1, I find the nearest and second-nearest descriptors in photo 2 by squared error, and accept the match if e<sub>1-NN</sub>/e<sub>2-NN</sub> &lt; 0.5 (Lowe's ratio test). A distinctive correct match is far better than its runner-up, while on repetitive texture the best and second-best candidates are about equally good, so their ratio is close to 1. MOPS Figure 6b shows correct matches concentrated at low ratios and incorrect ones near 1, and the threshold sits in the gap between them. The histogram shows the ratio for every feature of one of my photos, with the threshold marked.</p>
+<figure class="wide">
+  <img src="media/b3_matches.jpg" alt="149 matches after the ratio test, before RANSAC." loading="lazy">
+  <figcaption>149 matches after the ratio test, before RANSAC.</figcaption>
+</figure>
+<figure>
+  <img src="media/b3_ratio_hist.jpg" alt="1-NN/2-NN ratio for every feature in photo 0." loading="lazy">
+  <figcaption>1-NN/2-NN ratio for every feature in photo 0.</figcaption>
+</figure>
+<div class="mark" id="b4"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>B.4 RANSAC and automatic mosaics</h2>
+<p>The ratio test still lets some wrong matches through, and least squares is ruined by even one bad outlier. 4-point RANSAC repeats 5000 times: pick 4 random matches, compute the exact H through them, and count the inliers whose reprojection error ||Hp &minus; p'|| is under 3.0 px. It keeps the largest inlier set and refits H by least squares on all of its points. If a fraction w of matches is correct, a random sample is all-inlier with probability w<sup>4</sup>. Even with w = 0.3, the chance of never drawing a clean sample in 5000 tries is about 10<sup>&minus;18</sup>.</p>
+<table>
+<thead><tr><th>Set</th><th>Pair</th><th class="num">Harris corners</th><th class="num">Matches</th><th class="num">RANSAC inliers</th><th class="num">Max |H<sub>auto</sub> &minus; H<sub>manual</sub>| (px)</th><th class="num">Auto H on my clicks, RMS (px)</th><th class="num">Manual H on my clicks, RMS (px)</th></tr></thead>
+<tbody>
+<tr><td>Courtyard</td><td>0&ndash;1</td><td class="num">64254 / 64259</td><td class="num">149</td><td class="num">86</td><td class="num">39.5</td><td class="num">5.47</td><td class="num">4.31</td></tr>
+<tr><td>Courtyard</td><td>1&ndash;2</td><td class="num">64259 / 63133</td><td class="num">135</td><td class="num">86</td><td class="num">20.8</td><td class="num">4.84</td><td class="num">3.34</td></tr>
+<tr><td>Hall</td><td>0&ndash;1</td><td class="num">63549 / 64069</td><td class="num">172</td><td class="num">129</td><td class="num">17.4</td><td class="num">4.07</td><td class="num">3.32</td></tr>
+<tr><td>Hall</td><td>1&ndash;2</td><td class="num">64069 / 64072</td><td class="num">173</td><td class="num">87</td><td class="num">39.7</td><td class="num">5.07</td><td class="num">3.13</td></tr>
+<tr><td>Street</td><td>0&ndash;1</td><td class="num">60937 / 63502</td><td class="num">182</td><td class="num">126</td><td class="num">41.9</td><td class="num">5.32</td><td class="num">2.40</td></tr>
+<tr><td>Street</td><td>1&ndash;2</td><td class="num">63502 / 65539</td><td class="num">152</td><td class="num">91</td><td class="num">109.6</td><td class="num">4.10</td><td class="num">2.83</td></tr>
+</tbody>
+<caption>The sixth column is the largest distance between where the manual and automatic homographies send the four corners and the centre of the photo. It is largest at the photo corners, in sky and foreground where neither homography is constrained by any points, so it mostly measures extrapolation. The last two columns measure both homographies against the points I clicked. The manual H was fit to exactly those points, so it has an advantage there; the automatic H is 0.7 to 2.9 px worse on them, which is the size of my clicking error plus the parallax between near and far objects that each fit resolves differently (RANSAC locks onto the far background, where most matches are, while my clicks include nearer posts and lamps).</caption>
+</table>
+<h3>Courtyard</h3>
+<figure class="wide">
+  <img src="media/auto_courtyard_matches_0_1.jpg" alt="Photo 0 &amp;harr; 1: RANSAC inliers (green) and rejected matches (red)." loading="lazy">
+  <figcaption>Photo 0 &harr; 1: RANSAC inliers (green) and rejected matches (red).</figcaption>
+</figure>
+<figure class="wide">
+  <img src="media/auto_courtyard_matches_1_2.jpg" alt="Photo 1 &amp;harr; 2: RANSAC inliers (green) and rejected matches (red)." loading="lazy">
+  <figcaption>Photo 1 &harr; 2: RANSAC inliers (green) and rejected matches (red).</figcaption>
+</figure>
+<div class="pair wide">
+<figure>
+  <img src="media/mos_courtyard_twoband.jpg" alt="Manual correspondences (Part A)." loading="lazy">
+  <figcaption>Manual correspondences (Part A).</figcaption>
+</figure>
+<figure>
+  <img src="media/auto_courtyard_mosaic.jpg" alt="Automatic (Part B)." loading="lazy">
+  <figcaption>Automatic (Part B).</figcaption>
+</figure>
+</div>
+<h3>Hall</h3>
+<figure class="wide">
+  <img src="media/auto_hall_matches_0_1.jpg" alt="Photo 0 &amp;harr; 1: RANSAC inliers (green) and rejected matches (red)." loading="lazy">
+  <figcaption>Photo 0 &harr; 1: RANSAC inliers (green) and rejected matches (red).</figcaption>
+</figure>
+<figure class="wide">
+  <img src="media/auto_hall_matches_1_2.jpg" alt="Photo 1 &amp;harr; 2: RANSAC inliers (green) and rejected matches (red)." loading="lazy">
+  <figcaption>Photo 1 &harr; 2: RANSAC inliers (green) and rejected matches (red).</figcaption>
+</figure>
+<div class="pair wide">
+<figure>
+  <img src="media/mos_hall_twoband.jpg" alt="Manual correspondences (Part A)." loading="lazy">
+  <figcaption>Manual correspondences (Part A).</figcaption>
+</figure>
+<figure>
+  <img src="media/auto_hall_mosaic.jpg" alt="Automatic (Part B)." loading="lazy">
+  <figcaption>Automatic (Part B).</figcaption>
+</figure>
+</div>
+<h3>Street</h3>
+<figure class="wide">
+  <img src="media/auto_street_matches_0_1.jpg" alt="Photo 0 &amp;harr; 1: RANSAC inliers (green) and rejected matches (red)." loading="lazy">
+  <figcaption>Photo 0 &harr; 1: RANSAC inliers (green) and rejected matches (red).</figcaption>
+</figure>
+<figure class="wide">
+  <img src="media/auto_street_matches_1_2.jpg" alt="Photo 1 &amp;harr; 2: RANSAC inliers (green) and rejected matches (red)." loading="lazy">
+  <figcaption>Photo 1 &harr; 2: RANSAC inliers (green) and rejected matches (red).</figcaption>
+</figure>
+<div class="pair wide">
+<figure>
+  <img src="media/mos_street_twoband.jpg" alt="Manual correspondences (Part A)." loading="lazy">
+  <figcaption>Manual correspondences (Part A).</figcaption>
+</figure>
+<figure>
+  <img src="media/auto_street_mosaic.jpg" alt="Automatic (Part B)." loading="lazy">
+  <figcaption>Automatic (Part B).</figcaption>
+</figure>
+</div>
+<div class="mark" id="b5"><span class="b"></span><span class="g"></span><span class="r"></span></div>
+<h2>B.5 Bells and whistles: rotation-invariant descriptors</h2>
+<p>Each corner gets an orientation: the direction of the image gradient, averaged with a Gaussian window (&sigma; = 4.5) as in MOPS. The 8&times;8 sampling grid is rotated by that angle before sampling, so the descriptor is expressed in the corner's own frame, and the same corner seen in a rotated photo yields the same descriptor. To score it against ground truth, I rotated one of my photos by 30 degrees with my own warp, so the true H is known, and matched it against the original:</p><ul><li>Axis-aligned descriptors: 8 inliers out of 12 matches, max error 778.07 px.</li><li>Rotation-invariant descriptors: 276 inliers out of 300 matches, max error 0.07 px.</li></ul><p>The error is the largest distance between where the recovered and the true H send a grid of points over the photo.</p>
+<figure class="narrow">
+  <img src="media/b5_orientations.jpg" alt="Oriented descriptor windows (every 5th). Red marks the dominant gradient direction." loading="lazy">
+  <figcaption>Oriented descriptor windows (every 5th). Red marks the dominant gradient direction.</figcaption>
+</figure>
+<figure class="wide">
+  <img src="media/b5_rot_matches.jpg" alt="Rotation-invariant matching of a photo against its 30 degree rotation." loading="lazy">
+  <figcaption>Rotation-invariant matching of a photo against its 30 degree rotation.</figcaption>
+</figure>
+<p class="note">All photos are my own. Reference: M. Brown, R. Szeliski and S. Winder, <em>Multi-Image Matching using Multi-Scale Oriented Patches</em>, CVPR 2005.</p>
 </div>
 </body>
 </html>
